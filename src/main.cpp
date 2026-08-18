@@ -62,6 +62,9 @@ WsTxMessage wsTxPool[WS_TX_POOL_SIZE];
 WebServer httpServer(80);
 WebSocketsServer webSocket(81);
 
+const char* WIFI_SSID = "Akhtarniroo";
+const char* WIFI_PASSWORD = "@esp8266!";
+
 void wsSendToClient(uint8_t num, const char *msg)
 {
   if (msg)
@@ -110,9 +113,11 @@ void setup()
     speedState[i].last_type[sizeof(speedState[i].last_type) - 1] = '\0';
   }
 
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP("ESP-AP", NULL);
-  Serial.printf("[WiFi] http://%s\n", WiFi.softAPIP().toString().c_str());
+  WiFi.mode(WIFI_STA);
+  //WiFi.softAP("ESP-AP", NULL);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
+  Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
 
   httpServer.on("/", []
                 { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
