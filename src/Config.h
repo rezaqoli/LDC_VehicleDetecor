@@ -21,7 +21,7 @@ static const int SAMPLING_MS = 5; // 200 Hz sampling rate
 // ============================================================
 // Pool & Queue Sizes
 // ============================================================
-static const uint8_t EVENT_POOL_SIZE = 16;
+static const uint8_t EVENT_POOL_SIZE = 8;
 static const uint8_t WS_TX_POOL_SIZE = 16;
 static const size_t  WS_TX_MSG_MAX   = 800;
 

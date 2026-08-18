@@ -210,7 +210,5 @@ private:
 // ============================================================
 // Free-standing utility functions
 // ============================================================
-int recomputeSpatialSignature(EventResult &ev, float speed_ms, float sampling_ms);
-size_t encodeBase64(const uint8_t *data, size_t len, char *out, size_t outSize);
 void send_full_features(const EventResult &ev, void (*wsCallback)(const char *));
 void reportEvent(const EventResult &ev, void (*wsCallback)(const char *));

@@ -130,6 +130,10 @@ void applySpeedPairConfig(uint8_t idx, bool enabled, float distance,
   loopCfg[idx].ch1 = constrain((int)ch1, 0, 3);
   loopCfg[idx].sensor2 = constrain((int)sensor2, 0, 1);
   loopCfg[idx].ch2 = constrain((int)ch2, 0, 3);
+  releaseEventSlot(speedState[idx].e1);
+  releaseEventSlot(speedState[idx].e2);
+  speedState[idx].e1 = nullptr;
+  speedState[idx].e2 = nullptr;
   speedState[idx].h1 = false;
   speedState[idx].h2 = false;
   refreshDetectorLoopModes();

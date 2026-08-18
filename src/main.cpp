@@ -54,6 +54,7 @@ SemaphoreHandle_t i2c0Mutex, i2c1Mutex, wsMutex;
 SemaphoreHandle_t dataMutex;
 
 EventResult eventPool[EVENT_POOL_SIZE];
+uint8_t eventPoolRefs[EVENT_POOL_SIZE];
 WsTxMessage wsTxPool[WS_TX_POOL_SIZE];
 
 // ============================================================

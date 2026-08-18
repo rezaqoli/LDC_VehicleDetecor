@@ -877,53 +877,6 @@ void VehicleDetector::reclassify(EventResult &ev)
 // ============================================================
 // Utility Functions
 // ============================================================
-int recomputeSpatialSignature(EventResult &ev, float speed_ms, float sampling_ms)
-{
-    constexpr int kResampleCount = 64;
-    ev.spatial_speed_ms = speed_ms;
-    for (int i = 0; i < kResampleCount; i++)
-        ev.resampled_sig[i] = 0.0f;
-
-    int n = (int)ev.sample_count;
-    if (n > EventResult::MAX_EVENT_SIGNAL)
-        n = EventResult::MAX_EVENT_SIGNAL;
-    if (n < 2 || speed_ms <= 0.0f || sampling_ms <= 0.0f)
-        return 0;
-
-    int count = SignalProcessing::spatialResample(ev.time_sig, n, speed_ms, sampling_ms, ev.resampled_sig, kResampleCount);
-    if (count > 1)
-        SignalProcessing::normalize(ev.resampled_sig, count);
-    return count;
-}
-
-size_t encodeBase64(const uint8_t *data, size_t len, char *out, size_t outSize)
-{
-    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    size_t needed = ((len + 2) / 3) * 4 + 1;
-    if (outSize < needed)
-    {
-        if (outSize > 0)
-            out[0] = '\0';
-        return 0;
-    }
-    size_t j = 0;
-    for (size_t i = 0; i < len; i += 3)
-    {
-        uint32_t v = ((uint32_t)data[i]) << 16;
-        bool has_b1 = (i + 1) < len;
-        bool has_b2 = (i + 2) < len;
-        if (has_b1)
-            v |= ((uint32_t)data[i + 1]) << 8;
-        if (has_b2)
-            v |= data[i + 2];
-        out[j++] = alphabet[(v >> 18) & 0x3F];
-        out[j++] = alphabet[(v >> 12) & 0x3F];
-        out[j++] = has_b1 ? alphabet[(v >> 6) & 0x3F] : '=';
-        out[j++] = has_b2 ? alphabet[v & 0x3F] : '=';
-    }
-    out[j] = '\0';
-    return j;
-}
 
 void send_full_features(const EventResult &ev, void (*wsCallback)(const char *))
 {

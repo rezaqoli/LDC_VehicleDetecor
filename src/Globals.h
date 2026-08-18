@@ -37,8 +37,8 @@ struct LoopConfig
 
 struct SpeedPairState
 {
-  EventResult e1;
-  EventResult e2;
+  EventResult *e1 = nullptr;
+  EventResult *e2 = nullptr;
   bool h1 = false;
   bool h2 = false;
   bool valid = false;
@@ -83,6 +83,8 @@ extern QueueHandle_t freeEventQueue;
 extern QueueHandle_t wsTxQueue;
 extern QueueHandle_t freeWsMsgQueue;
 
+void releaseEventSlot(EventResult *slot);
+
 // ============================================================
 // FreeRTOS Semaphores
 // ============================================================
@@ -95,6 +97,7 @@ extern SemaphoreHandle_t wsMutex;
 // Event & WS Message Pools
 // ============================================================
 extern EventResult eventPool[EVENT_POOL_SIZE];
+extern uint8_t eventPoolRefs[EVENT_POOL_SIZE];
 extern WsTxMessage wsTxPool[WS_TX_POOL_SIZE];
 
 // ============================================================

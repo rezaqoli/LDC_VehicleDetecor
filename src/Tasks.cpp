@@ -13,14 +13,36 @@ static EventResult *allocEventSlot()
 {
   EventResult *slot = nullptr;
   if (freeEventQueue && xQueueReceive(freeEventQueue, &slot, 0) == pdTRUE)
+  {
+    if (slot >= eventPool && slot < eventPool + EVENT_POOL_SIZE)
+      eventPoolRefs[slot - eventPool] = 1;
     return slot;
+  }
   return nullptr;
 }
 
-static void releaseEventSlot(EventResult *slot)
+static void retainEventSlot(EventResult *slot)
+{
+  if (slot && slot >= eventPool && slot < eventPool + EVENT_POOL_SIZE)
+    eventPoolRefs[slot - eventPool]++;
+}
+
+void releaseEventSlot(EventResult *slot)
 {
   if (slot && freeEventQueue)
+  {
+    if (slot >= eventPool && slot < eventPool + EVENT_POOL_SIZE)
+    {
+      uint8_t &refs = eventPoolRefs[slot - eventPool];
+      if (refs > 1)
+      {
+        refs--;
+        return;
+      }
+      refs = 0;
+    }
     xQueueSend(freeEventQueue, &slot, 0);
+  }
 }
 
 static void onRecalibrate(const char *id)
@@ -144,33 +166,48 @@ void taskSpeedMatch(void *)
     EventResult *ev = nullptr;
     if (xQueueReceive(eventQueue, &ev, pdMS_TO_TICKS(20)) == pdTRUE)
     {
+      uint8_t matchCount = 0;
       for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
       {
         LoopConfig &cfgPair = loopCfg[i];
         SpeedPairState &st = speedState[i];
+        if (!cfgPair.dualLoop)
+          continue;
+
         char id1[8], id2[8];
         formatLoopChannelId(cfgPair.sensor1, cfgPair.ch1, id1, sizeof(id1));
         formatLoopChannelId(cfgPair.sensor2, cfgPair.ch2, id2, sizeof(id2));
 
         if (ev && strcmp(ev->channel_id, id1) == 0)
         {
-          st.e1 = *ev;
+          if (st.e1)
+            releaseEventSlot(st.e1);
+          if (matchCount > 0)
+            retainEventSlot(ev);
+          st.e1 = ev;
           st.h1 = true;
+          matchCount++;
         }
         if (ev && strcmp(ev->channel_id, id2) == 0)
         {
-          st.e2 = *ev;
+          if (st.e2)
+            releaseEventSlot(st.e2);
+          if (matchCount > 0)
+            retainEventSlot(ev);
+          st.e2 = ev;
           st.h2 = true;
+          matchCount++;
         }
       }
-      releaseEventSlot(ev);
+      if (matchCount == 0)
+        releaseEventSlot(ev);
     }
 
     for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
     {
       LoopConfig &cfgPair = loopCfg[i];
       SpeedPairState &st = speedState[i];
-      if (!cfgPair.dualLoop || !st.h1 || !st.h2)
+      if (!cfgPair.dualLoop || !st.h1 || !st.h2 || !st.e1 || !st.e2)
         continue;
 
       char id1[8], id2[8];
@@ -179,13 +216,21 @@ void taskSpeedMatch(void *)
 
       if (strcmp(id1, id2) == 0)
       {
+        releaseEventSlot(st.e1);
+        releaseEventSlot(st.e2);
+        st.e1 = nullptr;
+        st.e2 = nullptr;
         st.h1 = st.h2 = false;
         continue;
       }
 
-      uint32_t event_delta_us = (st.e1.end_us > st.e2.end_us) ? (st.e1.end_us - st.e2.end_us) : (st.e2.end_us - st.e1.end_us);
+      uint32_t event_delta_us = (st.e1->end_us > st.e2->end_us) ? (st.e1->end_us - st.e2->end_us) : (st.e2->end_us - st.e1->end_us);
       if (event_delta_us > 3000000UL)
       {
+        releaseEventSlot(st.e1);
+        releaseEventSlot(st.e2);
+        st.e1 = nullptr;
+        st.e2 = nullptr;
         st.h1 = st.h2 = false;
         continue;
       }
@@ -197,12 +242,12 @@ void taskSpeedMatch(void *)
       {
         float speed_ms = cfgPair.distance / (abs_delay_ms / 1000.0f);
 
-        float length = speed_ms * ((st.e1.duration_ms + st.e2.duration_ms) * 0.5f / 1000.0f);
-        st.e1.estimated_length_m = length;
-        st.e2.estimated_length_m = length;
-        det[cfgPair.sensor1][cfgPair.ch1].reclassify(st.e1);
-        det[cfgPair.sensor2][cfgPair.ch2].reclassify(st.e2);
-        const char *type = st.e1.vehicle_class;
+        float length = speed_ms * ((st.e1->duration_ms + st.e2->duration_ms) * 0.5f / 1000.0f);
+        st.e1->estimated_length_m = length;
+        st.e2->estimated_length_m = length;
+        det[cfgPair.sensor1][cfgPair.ch1].reclassify(*st.e1);
+        det[cfgPair.sensor2][cfgPair.ch2].reclassify(*st.e2);
+        const char *type = st.e1->vehicle_class;
 
         st.valid = true;
         st.last_speed_kmh = speed_ms * 3.6f;
@@ -212,8 +257,8 @@ void taskSpeedMatch(void *)
         strncpy(st.last_type, type, sizeof(st.last_type) - 1);
         st.last_type[sizeof(st.last_type) - 1] = '\0';
 
-        reportEvent(st.e1, wsSend);
-        reportEvent(st.e2, wsSend);
+        reportEvent(*st.e1, wsSend);
+        reportEvent(*st.e2, wsSend);
 
         char msg[192];
         snprintf(msg, sizeof(msg),
@@ -223,6 +268,10 @@ void taskSpeedMatch(void *)
         Serial.println(msg);
       }
 
+      releaseEventSlot(st.e1);
+      releaseEventSlot(st.e2);
+      st.e1 = nullptr;
+      st.e2 = nullptr;
       st.h1 = st.h2 = false;
     }
     vTaskDelay(1);
