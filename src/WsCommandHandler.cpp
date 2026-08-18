@@ -1,0 +1,435 @@
+// ============================================================
+// WsCommandHandler.cpp  —  WebSocket command parsing & handling
+// ============================================================
+#include "WsCommandHandler.h"
+#include "WsUtils.h"
+
+namespace
+{
+enum WsEventType : uint8_t
+{
+  WS_TYPE_ERROR = 0,
+  WS_TYPE_DISCONNECTED,
+  WS_TYPE_CONNECTED,
+  WS_TYPE_TEXT = 3,
+  WS_TYPE_BIN,
+  WS_TYPE_PING,
+  WS_TYPE_PONG,
+  WS_TYPE_FRAGMENT_TEXT_START,
+  WS_TYPE_FRAGMENT_BIN_START,
+  WS_TYPE_FRAGMENT,
+  WS_TYPE_FRAGMENT_FIN,
+  WS_TYPE_CLOSE,
+  WS_TYPE_HEARTBEAT,
+  WS_TYPE_WARNING,
+  WS_TYPE_EVENT
+};
+}
+
+// ============================================================
+// Internal: parse pipe-delimited floats from a String
+// ============================================================
+static int parsePipeFloats(const String &s, float *out, int max)
+{
+  int cnt = 0, start = 0;
+  while (cnt < max)
+  {
+    int p = s.indexOf('|', start);
+    String tok = (p < 0) ? s.substring(start) : s.substring(start, p);
+    tok.trim();
+    if (tok.length())
+      out[cnt++] = tok.toFloat();
+    if (p < 0)
+      break;
+    start = p + 1;
+  }
+  return cnt;
+}
+
+// ============================================================
+// WebSocket Event Handler
+// ============================================================
+void webSocketEvent(uint8_t num, uint8_t type, uint8_t *payload, size_t len)
+{
+  if (type != WS_TYPE_TEXT)
+    return;
+  String cmd = String((char *)payload, len);
+  cmd.trim();
+
+  if (cmd.startsWith("CALIBRATE_CHANNEL|"))
+  {
+    float p[2] = {};
+    if (parsePipeFloats(cmd.substring(18), p, 2) == 2)
+    {
+      int s = (int)p[0];
+      int ch = (int)p[1];
+      if (s < 0 || s >= 2 || ch < 0 || ch >= 4)
+      {
+        wsSendToClient(num, "ERROR|Invalid_channel");
+        return;
+      }
+
+      det[s][ch].startCalibration();
+      char msg[48];
+      snprintf(msg, sizeof(msg), "CALIBRATION_STARTED|%s", det[s][ch].id());
+      wsSendToClient(num, msg);
+      Serial.printf("[CAL] Channel calibration started: %s\n", det[s][ch].id());
+    }
+  }
+  else if (cmd.startsWith("CALIBRATE"))
+  {
+    for (int s = 0; s < 2; s++)
+      for (int ch = 0; ch < 4; ch++)
+        det[s][ch].startCalibration();
+    wsSendToClient(num, "CALIBRATION_STARTED");
+  }
+  else if (cmd.startsWith("CONFIG|"))
+  {
+    float p[6] = {};
+    int count = parsePipeFloats(cmd.substring(7), p, 6);
+    if (count >= 2)
+    {
+      bool enabled = (p[0] != 0);
+      float distance = p[1];
+      if (distance <= 0.0f)
+      {
+        wsSendToClient(num, "ERROR|Invalid_distance");
+        return;
+      }
+      uint8_t sensor1 = 0;
+      uint8_t ch1 = 0;
+      uint8_t sensor2 = 1;
+      uint8_t ch2 = 0;
+
+      if (count >= 6)
+      {
+        sensor1 = (uint8_t)constrain((int)p[2], 0, 1);
+        ch1 = (uint8_t)constrain((int)p[3], 0, 3);
+        sensor2 = (uint8_t)constrain((int)p[4], 0, 1);
+        ch2 = (uint8_t)constrain((int)p[5], 0, 3);
+      }
+      else
+      {
+        ch1 = (uint8_t)constrain((int)p[2], 0, 3);
+        ch2 = (uint8_t)constrain((int)p[3], 0, 3);
+      }
+
+      char id1[8], id2[8];
+      applySpeedPairConfig(0, enabled, distance, sensor1, ch1, sensor2, ch2);
+      formatLoopChannelId(loopCfg[0].sensor1, loopCfg[0].ch1, id1, sizeof(id1));
+      formatLoopChannelId(loopCfg[0].sensor2, loopCfg[0].ch2, id2, sizeof(id2));
+      Serial.printf("[CONFIG] Pair=0 Dual=%d Dist=%.2fm Endpoints=%s<->%s\n",
+                    loopCfg[0].dualLoop, loopCfg[0].distance, id1, id2);
+      sendSpeedPairConfig(num, 0);
+    }
+  }
+  else if (cmd.startsWith("CONFIG_SET|"))
+  {
+    float p[7] = {};
+    int count = parsePipeFloats(cmd.substring(11), p, 7);
+    if (count == 7)
+    {
+      uint8_t idx = (uint8_t)constrain((int)p[0], 0, SPEED_PAIR_COUNT - 1);
+      if (p[2] <= 0.0f)
+      {
+        wsSendToClient(num, "ERROR|Invalid_distance");
+        return;
+      }
+      applySpeedPairConfig(
+          idx,
+          ((int)p[1] != 0),
+          p[2],
+          (uint8_t)p[3],
+          (uint8_t)p[4],
+          (uint8_t)p[5],
+          (uint8_t)p[6]);
+
+      char id1[8], id2[8];
+      formatLoopChannelId(loopCfg[idx].sensor1, loopCfg[idx].ch1, id1, sizeof(id1));
+      formatLoopChannelId(loopCfg[idx].sensor2, loopCfg[idx].ch2, id2, sizeof(id2));
+      Serial.printf("[CONFIG] Pair=%u Dual=%d Dist=%.2fm Endpoints=%s<->%s\n",
+                    idx, loopCfg[idx].dualLoop, loopCfg[idx].distance, id1, id2);
+      sendSpeedPairConfig(num, idx);
+    }
+  }
+  else if (cmd.startsWith("SET_LC|"))
+  {
+    float p[4] = {};
+    if (parsePipeFloats(cmd.substring(7), p, 4) == 4)
+    {
+      int s = (int)p[0], ch = (int)p[1];
+      if (s >= 0 && s < 2 && ch >= 0 && ch < 4)
+      {
+        auto &lc = (s == 0) ? sensor1LC : sensor2LC;
+        auto &bus = (s == 0) ? I2C_Bus0 : I2C_Bus1;
+        auto &ldc = (s == 0) ? ldc1 : ldc2;
+        auto &mtx = (s == 0) ? i2c0Mutex : i2c1Mutex;
+        lc.L[ch] = p[2];
+        lc.C[ch] = p[3];
+        if (xSemaphoreTake(mtx, pdMS_TO_TICKS(10)) == pdTRUE)
+        {
+          ldc.LDC1614_reset_sensor(bus);
+          ldc.LDC1614_single_channel_config(bus, ch, lc.L[ch], lc.C[ch]);
+          ldc.LDC1614_set_conversion_time(bus, ch, lc.conversion_time[ch]);
+          ldc.LDC1614_set_driver_current(bus, ch, lc.driver_current[ch]);
+          xSemaphoreGive(mtx);
+          wsSendToClient(num, "LC_ACK");
+        }
+      }
+    }
+  }
+  else if (cmd.startsWith("SET_THRESHOLD|"))
+  {
+    int first = cmd.indexOf('|', 14);
+    if (first == -1)
+      return;
+    String param = cmd.substring(14, first);
+    float val = cmd.substring(first + 1).toFloat();
+
+    for (int s = 0; s < 2; s++)
+    {
+      for (int ch = 0; ch < 4; ch++)
+      {
+        DetectorConfig cfg = det[s][ch].getConfig();
+        if (param == "enter")
+          cfg.enter_thresh = val;
+        else if (param == "exit_ratio")
+          cfg.exit_ratio = val;
+        else if (param == "hysteresis")
+          cfg.exit_hysteresis_cnt = (uint32_t)val;
+        det[s][ch].setConfig(cfg);
+      }
+    }
+    wsSendToClient(num, "THRESHOLD_ACK");
+  }
+  else if (cmd.startsWith("SET_EVENT_RANGE|"))
+  {
+    float p[2];
+    if (parsePipeFloats(cmd.substring(16), p, 2) == 2)
+    {
+      uint32_t min_ms = (uint32_t)p[0];
+      uint32_t max_ms = (uint32_t)p[1];
+      if (min_ms == 0 || max_ms <= min_ms)
+      {
+        wsSendToClient(num, "ERROR|Invalid_event_range");
+        return;
+      }
+      for (int s = 0; s < 2; s++)
+        for (int ch = 0; ch < 4; ch++)
+        {
+          DetectorConfig cfg = det[s][ch].getConfig();
+          cfg.min_event_ms = min_ms;
+          cfg.max_event_ms = max_ms;
+          det[s][ch].setConfig(cfg);
+        }
+      wsSendToClient(num, "EVENT_RANGE_ACK");
+    }
+  }
+  else if (cmd.startsWith("SET_CLASSIFY|"))
+  {
+    float p[27] = {};
+    int count = parsePipeFloats(cmd.substring(13), p, 27);
+    if (count >= 9)
+    {
+      for (int s = 0; s < 2; s++)
+        for (int ch = 0; ch < 4; ch++)
+        {
+          DetectorConfig cfg = det[s][ch].getConfig();
+          cfg.motor_max_len = p[0];
+          cfg.car_max_len = p[1];
+          cfg.pickup_max_len = p[2];
+          cfg.van_max_len = p[3];
+          cfg.bus_max_len = p[4];
+          cfg.truck_s_max_len = p[5];
+          cfg.truck_2_max_len = p[6];
+          cfg.truck_3_max_len = p[7];
+          cfg.truck_4_plus_min_len = p[8];
+
+          if (count >= 11)
+          {
+            cfg.peak_prominence_ratio = p[9];
+            cfg.min_axle_distance_ms = p[10];
+          }
+          if (count >= 27)
+          {
+            cfg.classify_rise_short_ms = p[11];
+            cfg.classify_rise_mid_ms = p[12];
+            cfg.classify_rise_long_ms = p[13];
+            cfg.classify_energy_low = p[14];
+            cfg.classify_energy_mid = p[15];
+            cfg.classify_energy_high = p[16];
+            cfg.classify_crest_spiky = p[17];
+            cfg.classify_crest_broad = p[18];
+            cfg.classify_skew_tol = p[19];
+            cfg.classify_skew_high = p[20];
+            cfg.classify_com_center_min = p[21];
+            cfg.classify_com_center_max = p[22];
+            cfg.classify_width_medium = p[23];
+            cfg.classify_width_wide = p[24];
+            cfg.classify_std_peak_high = p[25];
+            cfg.classify_std_peak_low = p[26];
+          }
+          det[s][ch].setConfig(cfg);
+        }
+      wsSendToClient(num, "CLASSIFY_ACK");
+    }
+  }
+  else if (cmd.startsWith("SET_DETECTOR|"))
+  {
+    float p[5] = {};
+    if (parsePipeFloats(cmd.substring(13), p, 5) == 5)
+    {
+      if (p[0] <= 0.0f || p[1] <= 0.0f || p[2] <= 0.0f || p[3] <= 0.0f || p[4] <= 0.0f)
+      {
+        wsSendToClient(num, "ERROR|Invalid_detector_values");
+        return;
+      }
+      for (int s = 0; s < 2; s++)
+      {
+        for (int ch = 0; ch < 4; ch++)
+        {
+          DetectorConfig cfg = det[s][ch].getConfig();
+          cfg.confirm_samples = (uint32_t)p[0];
+          cfg.min_event_samples = (uint32_t)p[1];
+          cfg.peak_to_baseline_ratio = p[2];
+          cfg.enter_hysteresis_ratio = p[3];
+          cfg.exit_hysteresis_ratio = p[4];
+          det[s][ch].setConfig(cfg);
+        }
+      }
+      wsSendToClient(num, "DETECTOR_ACK");
+    }
+  }
+  else if (cmd.startsWith("SET_AUTO_THRESH|"))
+  {
+    float p[3] = {};
+
+    if (parsePipeFloats(cmd.substring(16), p, 3) == 3)
+    {
+      if (p[1] <= 0.0f || p[2] <= 0.0f)
+      {
+        wsSendToClient(num, "ERROR|Invalid_sigma_values");
+        return;
+      }
+      for (int s = 0; s < 2; s++)
+      {
+        for (int ch = 0; ch < 4; ch++)
+        {
+          DetectorConfig cfg = det[s][ch].getConfig();
+
+          cfg.auto_threshold = ((int)p[0] != 0);
+          cfg.enter_sigma = p[1];
+          cfg.abs_sigma = p[2];
+
+          det[s][ch].setConfig(cfg);
+          det[s][ch].recalcThresholds();
+        }
+      }
+
+      wsSendToClient(num, "AUTO_THRESH_ACK");
+    }
+  }
+  else if (cmd.startsWith("GET_SPEED_CONFIG"))
+  {
+    sendAllSpeedPairConfigs(num);
+  }
+  else if (cmd == "GET_SPEED_STATE")
+  {
+    sendAllSpeedResults(num);
+  }
+  else if (cmd.startsWith("GET_CONFIG"))
+  {
+    DetectorConfig cfg = det[0][0].getConfig();
+    char msg[640];
+    snprintf(msg, sizeof(msg),
+             "CONFIG|enter:%.6f|abs:%.6f|exit_ratio:%.2f|hyst:%u|min_ms:%u|max_ms:%u|motor:%.1f|car:%.1f|pickup:%.1f|van:%.1f|bus:%.1f|truckS:%.1f|truck2:%.1f|truck3:%.1f|truck4min:%.1f|prom:%.2f|axle_ms:%.1f|confirm:%u|min_samples:%u|peak_ratio:%.2f|enter_hyst:%.2f|exit_hyst:%.2f|auto:%d|enter_sigma:%.2f|abs_sigma:%.2f|dual:%d|dist:%.1f|s1:%u|c1:%u|s2:%u|c2:%u|default_kmh:%.1f|rise_short:%.1f|rise_mid:%.1f|rise_long:%.1f|energy_low:%.6f|energy_mid:%.6f|energy_high:%.6f|crest_spiky:%.2f|crest_broad:%.2f|skew_tol:%.2f|skew_high:%.2f|com_min:%.2f|com_max:%.2f|width_mid:%.2f|width_wide:%.2f|std_high:%.2f|std_low:%.2f",
+             cfg.enter_thresh, cfg.absolute_min_dev, cfg.exit_ratio, cfg.exit_hysteresis_cnt,
+             cfg.min_event_ms, cfg.max_event_ms,
+             cfg.motor_max_len, cfg.car_max_len, cfg.pickup_max_len, cfg.van_max_len, cfg.bus_max_len,
+             cfg.truck_s_max_len, cfg.truck_2_max_len, cfg.truck_3_max_len, cfg.truck_4_plus_min_len,
+             cfg.peak_prominence_ratio, cfg.min_axle_distance_ms,
+             cfg.confirm_samples, cfg.min_event_samples,
+             cfg.peak_to_baseline_ratio, cfg.enter_hysteresis_ratio, cfg.exit_hysteresis_ratio,
+             cfg.auto_threshold ? 1 : 0,
+             cfg.enter_sigma, cfg.abs_sigma,
+             loopCfg[0].dualLoop ? 1 : 0, loopCfg[0].distance,
+             loopCfg[0].sensor1, loopCfg[0].ch1, loopCfg[0].sensor2, loopCfg[0].ch2,
+             cfg.default_speed_kmh,
+             cfg.classify_rise_short_ms, cfg.classify_rise_mid_ms, cfg.classify_rise_long_ms,
+             cfg.classify_energy_low, cfg.classify_energy_mid, cfg.classify_energy_high,
+             cfg.classify_crest_spiky, cfg.classify_crest_broad,
+             cfg.classify_skew_tol, cfg.classify_skew_high,
+             cfg.classify_com_center_min, cfg.classify_com_center_max,
+             cfg.classify_width_medium, cfg.classify_width_wide,
+             cfg.classify_std_peak_high, cfg.classify_std_peak_low);
+    wsSendToClient(num, msg);
+    sendAllSpeedPairConfigs(num);
+  }
+  else if (cmd.startsWith("GET_CPU"))
+  {
+    char msg[32];
+    snprintf(msg, sizeof(msg), "CPU_ACK|%u|%u", cpu_usage_core0, cpu_usage_core1);
+    wsSendToClient(num, msg);
+  }
+  else if (cmd.startsWith("GET_STATUS"))
+  {
+    char msg[128] = "STATUS";
+    for (int s = 0; s < 2; s++)
+      for (int ch = 0; ch < 4; ch++)
+        snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), "|%s:%.0f", det[s][ch].id(), det[s][ch].baseline());
+    wsSendToClient(num, msg);
+  }
+  else if (cmd.startsWith("GET_NOISE"))
+  {
+    char msg[256];
+    int pos = 0;
+
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "NOISE");
+
+    for (int s = 0; s < 2; s++)
+    {
+      for (int ch = 0; ch < 4; ch++)
+      {
+        pos += snprintf(
+            msg + pos,
+            sizeof(msg) - pos,
+            "|%s:%.2f/%.2f/%.6f",
+            det[s][ch].id(),
+            det[s][ch].noiseStd(),
+            det[s][ch].noiseRms(),
+            det[s][ch].noisePercent());
+
+        if (pos >= (int)sizeof(msg))
+        {
+          break;
+        }
+      }
+    }
+    wsSendToClient(num, msg);
+  }
+  else if (cmd.startsWith("SET_DEFAULT_KMH"))
+  {
+    float p[1] = {};
+
+    if (parsePipeFloats(cmd.substring(16), p, 1) == 1)
+    {
+      for (int s = 0; s < 2; s++)
+      {
+        for (int ch = 0; ch < 4; ch++)
+        {
+          DetectorConfig cfg = det[s][ch].getConfig();
+
+          cfg.default_speed_kmh = p[0];
+
+          det[s][ch].setConfig(cfg);
+        }
+      }
+
+      wsSendToClient(num, "DEFAULT_KMH_ACK");
+    }
+  }
+  else if (cmd.startsWith("RESET"))
+  {
+    ESP.restart();
+  }
+}

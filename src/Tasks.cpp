@@ -1,0 +1,287 @@
+// ============================================================
+// Tasks.cpp  —  FreeRTOS task implementations
+// ============================================================
+#include "Tasks.h"
+#include "SensorDriver.h"
+#include "WsUtils.h"
+#include "esp_timer.h"
+
+// ============================================================
+// Internal helpers (file-scoped)
+// ============================================================
+static EventResult *allocEventSlot()
+{
+  EventResult *slot = nullptr;
+  if (freeEventQueue && xQueueReceive(freeEventQueue, &slot, 0) == pdTRUE)
+    return slot;
+  return nullptr;
+}
+
+static void releaseEventSlot(EventResult *slot)
+{
+  if (slot && freeEventQueue)
+    xQueueSend(freeEventQueue, &slot, 0);
+}
+
+static void onRecalibrate(const char *id)
+{
+  char msg[64];
+  snprintf(msg, sizeof(msg), "RECALIBRATE_NEEDED|%s", id);
+  wsSend(msg);
+}
+
+// ============================================================
+// Task: Sensor Reading (core 0, 8192 stack)
+// ============================================================
+void taskSensorReading(void *)
+{
+  TickType_t wake = xTaskGetTickCount();
+  while (true)
+  {
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(SAMPLING_MS));
+    RawFrame frame = {};
+    for (int s = 0; s < 2; s++)
+      for (int ch = 0; ch < 4; ch++)
+        frame.filtered[s][ch] = 0;
+    frame.ts_us = esp_timer_get_time();
+
+    readSensorChannels(I2C_Bus0, i2c0Mutex, ldc1, frame, 0);
+    readSensorChannels(I2C_Bus1, i2c1Mutex, ldc2, frame, 1);
+    if (rawQueue)
+      xQueueSend(rawQueue, &frame, 0);
+  }
+}
+
+// ============================================================
+// Task: Detector (core 0, 12288 stack)
+// ============================================================
+void taskDetector(void *)
+{
+  RawFrame frame;
+  static EventResult ev;
+
+  for (int s = 0; s < 2; s++)
+    for (int ch = 0; ch < 4; ch++)
+    {
+      det[s][ch].onRecalibrateNeeded = onRecalibrate;
+      det[s][ch].startCalibration();
+    }
+
+  while (true)
+  {
+    if (xQueueReceive(rawQueue, &frame, pdMS_TO_TICKS(10)) == pdTRUE)
+    {
+      for (int s = 0; s < 2; s++)
+      {
+        for (int ch = 0; ch < 4; ch++)
+        {
+          uint32_t val = frame.filtered[s][ch];
+          if (val == 0)
+            continue;
+          if (det[s][ch].feed(val, frame.ts_us, ev))
+          {
+            if (det[s][ch].isDualLoopMode())
+            {
+              EventResult *slot = allocEventSlot();
+              if (slot)
+              {
+                *slot = ev;
+                if (xQueueSend(eventQueue, &slot, 0) != pdTRUE)
+                  releaseEventSlot(slot);
+              }
+            }
+            else
+            {
+              reportEvent(ev, wsSend);
+            }
+          }
+        }
+      }
+
+      // Update latestData snapshot
+      if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(5)) == pdTRUE)
+      {
+        for (int ch = 0; ch < 4; ch++)
+        {
+          latestData.filtered1[ch] = frame.filtered[0][ch];
+          latestData.filtered2[ch] = frame.filtered[1][ch];
+          latestData.mean1[ch] = det[0][ch].baseline();
+          latestData.mean2[ch] = det[1][ch].baseline();
+          latestData.stdDev1[ch] = det[0][ch].noiseStd();
+          latestData.stdDev2[ch] = det[1][ch].noiseStd();
+          latestData.anomalyScore1[ch] = 0;
+          latestData.anomalyScore2[ch] = 0;
+          strncpy(latestData.status1[ch], "OK", sizeof(latestData.status1[ch]) - 1);
+          latestData.status1[ch][sizeof(latestData.status1[ch]) - 1] = '\0';
+          strncpy(latestData.status2[ch], "OK", sizeof(latestData.status2[ch]) - 1);
+          latestData.status2[ch][sizeof(latestData.status2[ch]) - 1] = '\0';
+        }
+        latestData.valid = true;
+        xSemaphoreGive(dataMutex);
+      }
+    }
+
+    // LED blink (2s toggle)
+    static uint64_t last_toggle_us = 0;
+    uint64_t now = esp_timer_get_time();
+    if (now - last_toggle_us >= 2000000ULL)
+    {
+      digitalWrite(ESP_RUN_LED, !digitalRead(ESP_RUN_LED));
+      last_toggle_us = now;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+// ============================================================
+// Task: Speed Match (core 0, 12288 stack)
+// ============================================================
+void taskSpeedMatch(void *)
+{
+  while (true)
+  {
+    EventResult *ev = nullptr;
+    if (xQueueReceive(eventQueue, &ev, pdMS_TO_TICKS(20)) == pdTRUE)
+    {
+      for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
+      {
+        LoopConfig &cfgPair = loopCfg[i];
+        SpeedPairState &st = speedState[i];
+        char id1[8], id2[8];
+        formatLoopChannelId(cfgPair.sensor1, cfgPair.ch1, id1, sizeof(id1));
+        formatLoopChannelId(cfgPair.sensor2, cfgPair.ch2, id2, sizeof(id2));
+
+        if (ev && strcmp(ev->channel_id, id1) == 0)
+        {
+          st.e1 = *ev;
+          st.h1 = true;
+        }
+        if (ev && strcmp(ev->channel_id, id2) == 0)
+        {
+          st.e2 = *ev;
+          st.h2 = true;
+        }
+      }
+      releaseEventSlot(ev);
+    }
+
+    for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
+    {
+      LoopConfig &cfgPair = loopCfg[i];
+      SpeedPairState &st = speedState[i];
+      if (!cfgPair.dualLoop || !st.h1 || !st.h2)
+        continue;
+
+      char id1[8], id2[8];
+      formatLoopChannelId(cfgPair.sensor1, cfgPair.ch1, id1, sizeof(id1));
+      formatLoopChannelId(cfgPair.sensor2, cfgPair.ch2, id2, sizeof(id2));
+
+      if (strcmp(id1, id2) == 0)
+      {
+        st.h1 = st.h2 = false;
+        continue;
+      }
+
+      uint32_t event_delta_us = (st.e1.end_us > st.e2.end_us) ? (st.e1.end_us - st.e2.end_us) : (st.e2.end_us - st.e1.end_us);
+      if (event_delta_us > 3000000UL)
+      {
+        st.h1 = st.h2 = false;
+        continue;
+      }
+
+      float delay_ms = event_delta_us / 1000.0f;
+      float abs_delay_ms = fabsf(delay_ms);
+
+      if (abs_delay_ms > 0.05f && abs_delay_ms < 1000.0f)
+      {
+        float speed_ms = cfgPair.distance / (abs_delay_ms / 1000.0f);
+
+        float length = speed_ms * ((st.e1.duration_ms + st.e2.duration_ms) * 0.5f / 1000.0f);
+        st.e1.estimated_length_m = length;
+        st.e2.estimated_length_m = length;
+        det[cfgPair.sensor1][cfgPair.ch1].reclassify(st.e1);
+        det[cfgPair.sensor2][cfgPair.ch2].reclassify(st.e2);
+        const char *type = st.e1.vehicle_class;
+
+        st.valid = true;
+        st.last_speed_kmh = speed_ms * 3.6f;
+        st.last_length_m = length;
+        st.last_delay_ms = delay_ms;
+        st.last_update_us = esp_timer_get_time();
+        strncpy(st.last_type, type, sizeof(st.last_type) - 1);
+        st.last_type[sizeof(st.last_type) - 1] = '\0';
+
+        reportEvent(st.e1, wsSend);
+        reportEvent(st.e2, wsSend);
+
+        char msg[192];
+        snprintf(msg, sizeof(msg),
+                 "SPEED|idx:%u|speed:%.1f|len:%.2f|type:%s|delay:%.2f|dist:%.2f|a:%s|b:%s",
+                 i, st.last_speed_kmh, st.last_length_m, st.last_type, st.last_delay_ms, cfgPair.distance, id1, id2);
+        wsSend(msg);
+        Serial.println(msg);
+      }
+
+      st.h1 = st.h2 = false;
+    }
+    vTaskDelay(1);
+  }
+}
+
+// ============================================================
+// Task: WebServer (core 1, 8192 stack)
+// ============================================================
+void taskWebServer(void *)
+{
+  while (true)
+  {
+    httpServer.handleClient();
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+// ============================================================
+// Task: WebSocket Loop (core 1, 12288 stack)
+// ============================================================
+void taskWsLoop(void *)
+{
+  TickType_t lastSensorSend = xTaskGetTickCount();
+  const TickType_t sensorPeriod = pdMS_TO_TICKS(50);
+
+  while (true)
+  {
+    wsLoop();
+
+    WsTxMessage *msg = nullptr;
+    for (uint8_t i = 0; i < 4 && xQueueReceive(wsTxQueue, &msg, 0) == pdTRUE; i++)
+    {
+      if (msg)
+      {
+        wsBroadcast(msg->text);
+        xQueueSend(freeWsMsgQueue, &msg, 0);
+      }
+    }
+
+    TickType_t now = xTaskGetTickCount();
+    if ((now - lastSensorSend) >= sensorPeriod)
+    {
+      lastSensorSend = now;
+      if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(2)) == pdTRUE)
+      {
+        if (latestData.valid)
+        {
+          SensorDataSnapshot snapshot = latestData;
+          xSemaphoreGive(dataMutex);
+          sendCombinedWebSocketData(snapshot);
+        }
+        else
+        {
+          xSemaphoreGive(dataMutex);
+        }
+      }
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
