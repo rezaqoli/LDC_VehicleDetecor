@@ -11,7 +11,7 @@
 #include <Wire.h>
 #include "RAK12029_LDC1614.h"
 #include "dashboard_html.h"
-#include <ArduinoOTA.h>
+#include <ESP2SOTA.h>
 
 #include "SensorDriver.h"
 #include "WsUtils.h"
@@ -114,7 +114,7 @@ void setup()
     speedState[i].last_type[sizeof(speedState[i].last_type) - 1] = '\0';
   }
 
-  WiFi.mode(WIFI_STA);
+  //WiFi.mode(WIFI_STA);
   //WiFi.softAP("ESP-AP", NULL);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
@@ -123,6 +123,7 @@ void setup()
   httpServer.on("/", []
                 { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
   httpServer.begin();
+  ESP2SOTA.begin(&httpServer);
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
