@@ -2,8 +2,10 @@
 // SensorDriver.cpp  —  LDC1614 sensor configuration & reading
 // ============================================================
 #include "SensorDriver.h"
+#include "SoftWire.h"
 
-void configureSensor(TwoWire &bus, RAK12029_LDC1614_Inductive &ldc, ChannelLC &lc)
+template<typename I2C>
+void configureSensor(I2C &bus, RAK12029_LDC1614_Inductive &ldc, ChannelLC &lc)
 {
   for (int ch = 0; ch < 4; ch++)
   {
@@ -13,7 +15,8 @@ void configureSensor(TwoWire &bus, RAK12029_LDC1614_Inductive &ldc, ChannelLC &l
   ldc.LDC1614_mutiple_channel_config(bus, lc.L[0], lc.C[0]);
 }
 
-void readSensorChannels(TwoWire &bus, SemaphoreHandle_t mtx,
+template<typename I2C>
+void readSensorChannels(I2C &bus, SemaphoreHandle_t mtx,
                         RAK12029_LDC1614_Inductive &ldc, RawFrame &frame, uint8_t sensor)
 {
   if (sensor >= 2 || !mtx)
@@ -30,3 +33,11 @@ void readSensorChannels(TwoWire &bus, SemaphoreHandle_t mtx,
     xSemaphoreGive(mtx);
   }
 }
+
+template void configureSensor<SoftWire>(SoftWire &, RAK12029_LDC1614_Inductive &, ChannelLC &);
+template void readSensorChannels<SoftWire>(SoftWire &, SemaphoreHandle_t,
+                                           RAK12029_LDC1614_Inductive &, RawFrame &, uint8_t);
+
+template void configureSensor<TwoWire>(TwoWire &, RAK12029_LDC1614_Inductive &, ChannelLC &);
+template void readSensorChannels<TwoWire>(TwoWire &, SemaphoreHandle_t,
+                                           RAK12029_LDC1614_Inductive &, RawFrame &, uint8_t);

@@ -66,9 +66,14 @@ void taskSensorReading(void *)
       for (int ch = 0; ch < 4; ch++)
         frame.filtered[s][ch] = 0;
     frame.ts_us = esp_timer_get_time();
+    #ifdef ESP32s3
+    readSensorChannels<TwoWire>(I2C_Bus0, i2c0Mutex, ldc1, frame, 0);
+    readSensorChannels<TwoWire>(I2C_Bus1, i2c1Mutex, ldc2, frame, 1);
+    #else
+    readSensorChannels<SoftWire>(I2C_Bus0, i2c0Mutex, ldc1, frame, 0);
+    readSensorChannels<SoftWire>(I2C_Bus1, i2c1Mutex, ldc2, frame, 1);
+    #endif
 
-    readSensorChannels(I2C_Bus0, i2c0Mutex, ldc1, frame, 0);
-    readSensorChannels(I2C_Bus1, i2c1Mutex, ldc2, frame, 1);
     if (rawQueue)
       xQueueSend(rawQueue, &frame, 0);
   }

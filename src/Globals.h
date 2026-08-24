@@ -13,6 +13,7 @@ class WebSocketsServer;
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Wire.h>
+#include <SoftWire.h>
 #include "RAK12029_LDC1614.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -52,11 +53,17 @@ struct SpeedPairState
 // ============================================================
 // I2C Bus & Sensor Objects
 // ============================================================
+#ifdef ESP32s3
 extern TwoWire I2C_Bus0;
 extern TwoWire I2C_Bus1;
+#else
+  #ifdef ESP32
+  extern SoftWire I2C_Bus0;
+  extern SoftWire I2C_Bus1;
+  #endif
+#endif
 extern RAK12029_LDC1614_Inductive ldc1;
 extern RAK12029_LDC1614_Inductive ldc2;
-
 // ============================================================
 // Sensor LC Configuration
 // ============================================================

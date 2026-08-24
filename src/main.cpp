@@ -5,7 +5,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WebSocketsServer_Generic.h>
-
+#include <SoftWire.h>
+#include "config.h"
 #include "Globals.h"
 
 #include <Wire.h>
@@ -21,8 +22,20 @@
 // ============================================================
 // Global Object Definitions
 // ============================================================
-TwoWire I2C_Bus0(0);
-TwoWire I2C_Bus1(1);
+#ifdef ESP32s3
+  TwoWire I2C_Bus0(0);
+  TwoWire I2C_Bus1(1);
+#endif
+#ifdef ESP32
+  SoftWire I2C_Bus0(SDA, SCL);
+  SoftWire I2C_Bus1(SDA2, SCL2);
+  char swTxBuffer0[16];
+  char swRxBuffer0[16];
+  char swTxBuffer1[16];
+  char swRxBuffer1[16];
+  #define SW_TIMEOUT 40
+#endif
+
 RAK12029_LDC1614_Inductive ldc1(0x2A);
 RAK12029_LDC1614_Inductive ldc2(0x2A);
 
@@ -98,15 +111,35 @@ void setup()
   delay(300);
   Serial.println("\n[LDC1614 v4.5] Modular Build");
 
+  #ifdef ESP32s3
   pinMode(ESP_RUN_LED, OUTPUT);
   digitalWrite(ESP_RUN_LED, LOW);
-
   I2C_Bus0.begin(SDA1, SCL1, 400000);
   I2C_Bus1.begin(SDA2, SCL2, 400000);
+  #endif
+  //#elifdef ESP32
+  #ifdef ESP32
+  Serial.println("\n 1");
+  I2C_Bus0.setTxBuffer(swTxBuffer0, sizeof(swTxBuffer0));
+  I2C_Bus0.setRxBuffer(swRxBuffer0, sizeof(swRxBuffer0));
+  I2C_Bus0.setTimeout_ms(1000);
+  I2C_Bus0.setDelay_us(5);
+  Serial.println("\n 3");
+  I2C_Bus0.begin();
+  I2C_Bus1.setTxBuffer(swTxBuffer1, sizeof(swTxBuffer1));
+  I2C_Bus1.setRxBuffer(swRxBuffer1, sizeof(swRxBuffer1));
+  I2C_Bus1.setTimeout_ms(1000);
+  I2C_Bus1.setDelay_us(5);
+  Serial.println("\n 2");
+  I2C_Bus1.begin();
+  Serial.println("\n 4");
+  #endif
+
   ldc1.LDC1614_reset_sensor(I2C_Bus0);
   ldc2.LDC1614_reset_sensor(I2C_Bus1);
-  configureSensor(I2C_Bus0, ldc1, sensor1LC);
-  configureSensor(I2C_Bus1, ldc2, sensor2LC);
+  configureSensor<SoftWire>(I2C_Bus0, ldc1, sensor1LC);
+  configureSensor<SoftWire>(I2C_Bus1, ldc2, sensor2LC);
+
   latestData.valid = false;
   for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
   {
@@ -127,15 +160,15 @@ void setup()
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
-  rawQueue = xQueueCreate(16, sizeof(RawFrame));
-  eventQueue = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
+  rawQueue       = xQueueCreate(16, sizeof(RawFrame));
+  eventQueue     = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
   freeEventQueue = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
-  wsTxQueue = xQueueCreate(WS_TX_POOL_SIZE, sizeof(WsTxMessage *));
+  wsTxQueue      = xQueueCreate(WS_TX_POOL_SIZE, sizeof(WsTxMessage *));
   freeWsMsgQueue = xQueueCreate(WS_TX_POOL_SIZE, sizeof(WsTxMessage *));
-  i2c0Mutex = xSemaphoreCreateMutex();
-  i2c1Mutex = xSemaphoreCreateMutex();
-  wsMutex = xSemaphoreCreateMutex();
-  dataMutex = xSemaphoreCreateMutex();
+  i2c0Mutex      = xSemaphoreCreateMutex();
+  i2c1Mutex      = xSemaphoreCreateMutex();
+  wsMutex        = xSemaphoreCreateMutex();
+  dataMutex      = xSemaphoreCreateMutex();
   if (!rawQueue || !eventQueue || !freeEventQueue || !wsTxQueue || !freeWsMsgQueue || !i2c0Mutex || !i2c1Mutex || !wsMutex || !dataMutex)
   {
     Serial.println("[ERR] Failed to create queue/semaphore");
@@ -154,8 +187,9 @@ void setup()
     WsTxMessage *slot = &wsTxPool[i];
     xQueueSend(freeWsMsgQueue, &slot, 0);
   }
-
-  if (xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
+//xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
+  if (
+      xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskDetector, "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskWsLoop, "WS", 12288, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSpeedMatch, "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||

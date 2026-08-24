@@ -27,14 +27,16 @@ RAK12029_LDC1614_Inductive::RAK12029_LDC1614_Inductive(u8 IIC_ADDR) {
 }
 
 // === توابع I2C با آدرس پویا ===
-s32 RAK12029_LDC1614_Inductive::IIC_write_byte(TwoWire &bus, u8 reg, u8 byte) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::IIC_write_byte(I2C &bus, u8 reg, u8 byte) {
   bus.beginTransmission(_IIC_ADDR);
   bus.write(reg);
   bus.write(byte);
   return bus.endTransmission();
 }
 
-s32 RAK12029_LDC1614_Inductive::IIC_write_16bit(TwoWire &bus, u8 reg, u16 value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::IIC_write_16bit(I2C &bus, u8 reg, u16 value) {
   bus.beginTransmission(_IIC_ADDR);
   bus.write(reg);
   bus.write(highByte(value));
@@ -42,7 +44,8 @@ s32 RAK12029_LDC1614_Inductive::IIC_write_16bit(TwoWire &bus, u8 reg, u16 value)
   return bus.endTransmission();
 }
 
-void RAK12029_LDC1614_Inductive::IIC_read_byte(TwoWire &bus, u8 reg, u8 *byte) {
+template<typename I2C>
+void RAK12029_LDC1614_Inductive::IIC_read_byte(I2C &bus, u8 reg, u8 *byte) {
   bus.beginTransmission(_IIC_ADDR);
   bus.write(reg);
   if (bus.endTransmission(false) != 0) {
@@ -56,7 +59,8 @@ void RAK12029_LDC1614_Inductive::IIC_read_byte(TwoWire &bus, u8 reg, u8 *byte) {
   }
 }
 
-s32 RAK12029_LDC1614_Inductive::IIC_read_16bit(TwoWire &bus, u8 start_reg, u16 *value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::IIC_read_16bit(I2C &bus, u8 start_reg, u16 *value) {
   *value = 0;
   bus.beginTransmission(_IIC_ADDR);
   bus.write(start_reg);
@@ -67,7 +71,8 @@ s32 RAK12029_LDC1614_Inductive::IIC_read_16bit(TwoWire &bus, u8 start_reg, u16 *
 }
 
 // === توابع عمومی ===
-void RAK12029_LDC1614_Inductive::LDC1614_read_sensor_infomation(TwoWire &bus) {
+template<typename I2C>
+void RAK12029_LDC1614_Inductive::LDC1614_read_sensor_infomation(I2C &bus) {
   u16 value = 0;
   IIC_read_16bit(bus, LDC1614_READ_MANUFACTURER_ID, &value);
   Serial.printf("Manufacturer ID: 0x%04X\n", value);
@@ -75,11 +80,13 @@ void RAK12029_LDC1614_Inductive::LDC1614_read_sensor_infomation(TwoWire &bus) {
   Serial.printf("Device ID: 0x%04X\n", value);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_init(TwoWire &bus) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_init(I2C &bus) {
   return LDC1614_reset_sensor(bus);  // فقط ریست
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_single_channel_config(TwoWire &bus, u8 channel, float inductance, float capacitance) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_single_channel_config(I2C &bus, u8 channel, float inductance, float capacitance) {
   if (channel >= 4) {
     Serial.println("ERROR: Invalid channel!");
     return -2;
@@ -99,7 +106,8 @@ s32 RAK12029_LDC1614_Inductive::LDC1614_single_channel_config(TwoWire &bus, u8 c
   return 0;
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_mutiple_channel_config(TwoWire &bus, float inductance, float capacitance) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_mutiple_channel_config(I2C &bus, float inductance, float capacitance) {
   for (u8 ch = 0; ch < 4; ch++) {
     LDC1614_set_L(ch, inductance);
     LDC1614_set_C(ch, capacitance);
@@ -128,7 +136,8 @@ s32 RAK12029_LDC1614_Inductive::LDC1614_parse_result_data(u8 channel, u32 raw_re
   return 0;
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_get_channel_result(TwoWire &bus, u8 channel, u32 *result) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_get_channel_result(I2C &bus, u8 channel, u32 *result) {
   if (!result || channel >= 4) return -1;
   u32 raw = 0;
   u16 msb, lsb;
@@ -138,19 +147,23 @@ s32 RAK12029_LDC1614_Inductive::LDC1614_get_channel_result(TwoWire &bus, u8 chan
   return LDC1614_parse_result_data(channel, raw, result);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_time(TwoWire &bus, u8 channel, u16 value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_time(I2C &bus, u8 channel, u16 value) {
   return IIC_write_16bit(bus, LDC1614_SET_CONVERSION_TIME_REG_START + channel, value);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_offset(TwoWire &bus, u8 channel, u16 value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_offset(I2C &bus, u8 channel, u16 value) {
   return IIC_write_16bit(bus, LDC1614_SET_CONVERSION_OFFSET_REG_START + channel, value);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_LC_stabilize_time(TwoWire &bus, u8 channel) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_LC_stabilize_time(I2C &bus, u8 channel) {
   return IIC_write_16bit(bus, LDC1614_SET_LC_STABILIZE_REG_START + channel, 30);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_FIN_LDC1614_Fref_DIV(TwoWire &bus, u8 channel) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_FIN_LDC1614_Fref_DIV(I2C &bus, u8 channel) {
   float L = LDC1614_inductance[channel] * 1e-6;
   float C = LDC1614_capacitance[channel] * 1e-12;
   if (L == 0 || C == 0) return -1;
@@ -165,23 +178,28 @@ s32 RAK12029_LDC1614_Inductive::LDC1614_set_FIN_LDC1614_Fref_DIV(TwoWire &bus, u
   return IIC_write_16bit(bus, LDC1614_SET_FREQ_REG_START + channel, value);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_ERROR_CONFIG(TwoWire &bus, u16 value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_ERROR_CONFIG(I2C &bus, u16 value) {
   return IIC_write_16bit(bus, LDC1614_ERROR_CONFIG_REG, value);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_sensor_config(TwoWire &bus, u16 value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_sensor_config(I2C &bus, u16 value) {
   return IIC_write_16bit(bus, LDC1614_SENSOR_CONFIG_REG, value);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_mux_config(TwoWire &bus, u16 value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_mux_config(I2C &bus, u16 value) {
   return IIC_write_16bit(bus, LDC1614_MUL_CONFIG_REG, value);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_reset_sensor(TwoWire &bus) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_reset_sensor(I2C  &bus) {
   return IIC_write_16bit(bus, LDC1614_SENSOR_RESET_REG, 0x8000);
 }
 
-s32 RAK12029_LDC1614_Inductive::LDC1614_set_driver_current(TwoWire &bus, u8 channel, u16 value) {
+template<typename I2C>
+s32 RAK12029_LDC1614_Inductive::LDC1614_set_driver_current(I2C &bus, u8 channel, u16 value) {
   return IIC_write_16bit(bus, LDC1614_SET_DRIVER_CURRENT_REG + channel, value);
 }
 
@@ -226,9 +244,30 @@ s32 RAK12029_LDC1614_Inductive::LDC1614_sensor_status_parse(u16 value) {
   return 0;
 }
 
-u32 RAK12029_LDC1614_Inductive::LDC1614_get_sensor_status(TwoWire &bus) {
+template<typename I2C>
+u32 RAK12029_LDC1614_Inductive::LDC1614_get_sensor_status(I2C &bus) {
   u16 value = 0;
   IIC_read_16bit(bus, LDC1614_SENSOR_STATUS_REG, &value);
   LDC1614_sensor_status_parse(value);
   return value;
 }
+
+template s32 RAK12029_LDC1614_Inductive::IIC_write_byte<SoftWire>(SoftWire &, u8, u8);
+template s32 RAK12029_LDC1614_Inductive::IIC_write_16bit<SoftWire>(SoftWire &, u8, u16);
+template void RAK12029_LDC1614_Inductive::IIC_read_byte<SoftWire>(SoftWire &, u8, u8 *);
+template s32 RAK12029_LDC1614_Inductive::IIC_read_16bit<SoftWire>(SoftWire &, u8, u16 *);
+template void RAK12029_LDC1614_Inductive::LDC1614_read_sensor_infomation<SoftWire>(SoftWire &);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_init<SoftWire>(SoftWire &);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_single_channel_config<SoftWire>(SoftWire &, u8, float, float);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_mutiple_channel_config<SoftWire>(SoftWire &, float, float);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_get_channel_result<SoftWire>(SoftWire &, u8, u32 *);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_time<SoftWire>(SoftWire &, u8, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_offset<SoftWire>(SoftWire &, u8, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_LC_stabilize_time<SoftWire>(SoftWire &, u8);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_FIN_LDC1614_Fref_DIV<SoftWire>(SoftWire &, u8);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_ERROR_CONFIG<SoftWire>(SoftWire &, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_sensor_config<SoftWire>(SoftWire &, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_mux_config<SoftWire>(SoftWire &, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_reset_sensor<SoftWire>(SoftWire &);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_driver_current<SoftWire>(SoftWire &, u8, u16);
+template u32 RAK12029_LDC1614_Inductive::LDC1614_get_sensor_status<SoftWire>(SoftWire &);

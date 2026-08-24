@@ -10,6 +10,7 @@
 #define _RAK12029_LDC1614_H
 
 #include <Wire.h>
+#include <SoftWire.h>
 #include <Arduino.h>
 #include <cstdint>
 
@@ -77,27 +78,46 @@ public:
     ~RAK12029_LDC1614_Inductive() = default;
 
     // === توابع I2C (با باس دلخواه) ===
-    s32  IIC_write_byte(TwoWire &bus, u8 reg, u8 byte);
-    void IIC_read_byte(TwoWire &bus, u8 reg, u8 *byte);
-    s32  IIC_read_16bit(TwoWire &bus, u8 reg, u16 *value);
-    s32  IIC_write_16bit(TwoWire &bus, u8 reg, u16 value);
+    template<typename I2C>
+    s32  IIC_write_byte(I2C &bus, u8 reg, u8 byte);
+    template<typename I2C>
+    void IIC_read_byte(I2C &bus, u8 reg, u8 *byte);
+    template<typename I2C>
+    s32  IIC_read_16bit(I2C &bus, u8 reg, u16 *value);
+    template<typename I2C>
+    s32  IIC_write_16bit(I2C &bus, u8 reg, u16 value);
 
     // === توابع عمومی (با باس دلخواه) ===
-    void LDC1614_read_sensor_infomation(TwoWire &bus);
-    s32  LDC1614_init(TwoWire &bus);
-    s32  LDC1614_get_channel_result(TwoWire &bus, u8 channel, u32 *result);
-    s32  LDC1614_set_conversion_time(TwoWire &bus, u8 channel, u16 value);
-    s32  LDC1614_set_LC_stabilize_time(TwoWire &bus, u8 channel);
-    s32  LDC1614_set_conversion_offset(TwoWire &bus, u8 channel, u16 value);
-    u32  LDC1614_get_sensor_status(TwoWire &bus);  // ویرگول حذف شد
-    s32  LDC1614_set_ERROR_CONFIG(TwoWire &bus, u16 value);
-    s32  LDC1614_set_sensor_config(TwoWire &bus, u16 value);
-    s32  LDC1614_set_mux_config(TwoWire &bus, u16 value);
-    s32  LDC1614_reset_sensor(TwoWire &bus);
-    s32  LDC1614_set_driver_current(TwoWire &bus, u8 channel, u16 value);
-    s32  LDC1614_set_FIN_LDC1614_Fref_DIV(TwoWire &bus, u8 channel);
-    s32  LDC1614_single_channel_config(TwoWire &bus, u8 channel, float inductance, float capacitance);
-    s32  LDC1614_mutiple_channel_config(TwoWire &bus, float inductance, float capacitance);
+    template<typename I2C>
+    void LDC1614_read_sensor_infomation(I2C &bus);
+    template<typename I2C>
+    s32  LDC1614_init(I2C &bus);
+    template<typename I2C>
+    s32  LDC1614_get_channel_result(I2C &bus, u8 channel, u32 *result);
+    template<typename I2C>
+    s32  LDC1614_set_conversion_time(I2C &bus, u8 channel, u16 value);
+    template<typename I2C>
+    s32  LDC1614_set_LC_stabilize_time(I2C &bus, u8 channel);
+    template<typename I2C>
+    s32  LDC1614_set_conversion_offset(I2C &bus, u8 channel, u16 value);
+    template<typename I2C>
+    u32  LDC1614_get_sensor_status(I2C &bus);  // ویرگول حذف شد
+    template<typename I2C>
+    s32  LDC1614_set_ERROR_CONFIG(I2C &bus, u16 value);
+    template<typename I2C>
+    s32  LDC1614_set_sensor_config(I2C &bus, u16 value);
+    template<typename I2C>
+    s32  LDC1614_set_mux_config(I2C &bus, u16 value);
+    template<typename I2C>
+    s32  LDC1614_reset_sensor(I2C &bus);
+    template<typename I2C>
+    s32  LDC1614_set_driver_current(I2C &bus, u8 channel, u16 value);
+    template<typename I2C>
+    s32  LDC1614_set_FIN_LDC1614_Fref_DIV(I2C &bus, u8 channel);
+    template<typename I2C>
+    s32  LDC1614_single_channel_config(I2C &bus, u8 channel, float inductance, float capacitance);
+    template<typename I2C>
+    s32  LDC1614_mutiple_channel_config(I2C &bus, float inductance, float capacitance);
 
     // === توابع تنظیم داخلی (بدون باس) ===
     void LDC1614_select_channel_to_convert(u8 channel, u16 *value);  // بدون bus

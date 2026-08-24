@@ -4,6 +4,8 @@
 #pragma once
 #include <Arduino.h>
 
+#define ESP32s3 1
+#ifdef ESP32s3 
 // ============================================================
 // Hardware Pin Definitions
 // ============================================================
@@ -12,6 +14,15 @@
 #define SDA2        12
 #define SCL2        13
 #define ESP_RUN_LED 21
+#endif
+
+#ifdef ESP32
+#define SDA1        13
+#define SCL1        9
+#define SDA2        11
+#define SCL2        6
+#define ESP_RUN_LED 7
+#endif
 
 // ============================================================
 // Timing & Sampling
