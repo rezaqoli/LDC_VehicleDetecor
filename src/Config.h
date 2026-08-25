@@ -25,9 +25,17 @@
 #endif
 
 #define SerialAT Serial1
-#define TINY_GSM_MODEM_QUECTEL
-#define TINY_GSM_RX_BUFFER 1024       // Increase receive buffer (optional)
-#define TINY_GSM_USE_GPRS true        // Enable GPRS (default)
+#define TINY_GSM_MODEM_BG96
+#define TINY_GSM_RX_BUFFER 1024
+#define TINY_GSM_YIELD_MS 2
+#define TINY_GSM_USE_GPRS true
+#define TINY_GSM_DEBUG Serial
+
+#define MODEM_RX_PIN 18
+#define MODEM_TX_PIN 17
+#define MODEM_RESET_PIN 8
+#define MODEM_BAUD_RATE 115200
+#define MODEM_APN "shatelmobile"
 
 // ============================================================
 // Timing & Sampling

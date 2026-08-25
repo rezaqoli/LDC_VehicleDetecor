@@ -19,6 +19,7 @@
 #include "WsUtils.h"
 #include "WsCommandHandler.h"
 #include "Tasks.h"
+#include "LteModem.h"
 // ============================================================
 // Global Object Definitions
 // ============================================================
@@ -112,114 +113,6 @@ uint32_t cpu_usage_core1 = 0;
 
 
 
-void taskLTEInit(void *pvParameters);
-
-
-void taskLTEStatusMonitor(void *pvParameters)
-{
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(15000); // Every 15 seconds
-    
-    while (1)
-    {
-        vTaskDelayUntil(&xLastWakeTime, xFrequency);
-        
-        if (!modem.isInitialized())
-            continue;
-        
-        Serial.println("\n========== LTE Status Update ==========");
-        
-        // Get network info
-        NetworkInfo net_info;
-        if (modem.queryRegistrationStatus(net_info))
-        {
-            Serial.printf("Network Operator : %s\n", net_info.operator_name);
-            Serial.printf("Registered       : %s\n", net_info.registered ? "YES" : "NO");
-            Serial.printf("Network Type     : %s\n", 
-                net_info.type == NetworkType::LTE_4G ? "4G LTE" : 
-                net_info.type == NetworkType::GSM_2G ? "2G GSM" : "Unknown");
-            
-            Serial.printf("\nSignal Quality:\n");
-            Serial.printf("  RSSI           : %d (0-31, higher=better)\n", net_info.signal.rssi);
-            Serial.printf("  BER            : %d (0-7, lower=better)\n", net_info.signal.ber);
-            Serial.printf("  RSRP           : %d dBm\n", net_info.signal.rsrp);
-            Serial.printf("  RSRQ           : %d dB\n", net_info.signal.rsrq);
-            Serial.printf("  SINR           : %d dB\n", net_info.signal.sinr);
-        }
-        
-        // Check PDP status
-        Serial.printf("Data Connection  : %s\n", modem.getPDPStatus() ? "ACTIVE" : "INACTIVE");
-        Serial.printf("Modem State      : %s\n", modem.getStateString());
-        Serial.println("=======================================\n");
-    }
-}
-
-void handleLTECommands()
-{
-    if (Serial.available())
-    {
-        String line = Serial.readStringUntil('\n');
-        line.trim();
-        
-        if (line.length() == 0)
-            return;
-        
-        if (line.startsWith("AT"))
-        {
-            // Forward AT command to modem
-            ATResponse resp = modem.sendCommand(line.c_str(), 5000);
-            Serial.printf("\n[AT Response] (%d lines, %lu ms):\n", 
-                         resp.line_count, resp.response_time_ms);
-            for (uint16_t i = 0; i < resp.line_count; i++)
-            {
-                Serial.println(resp.lines[i]);
-            }
-            Serial.println();
-        }
-        else if (line == "LTE_STATUS")
-        {
-            Serial.println("\n========== Full LTE Status ==========");
-            Serial.printf("State: %s\n", modem.getStateString());
-            Serial.printf("Initialized: %s\n", modem.isInitialized() ? "YES" : "NO");
-            
-            NetworkInfo info;
-            if (modem.queryRegistrationStatus(info))
-            {
-                Serial.printf("Operator: %s\n", info.operator_name);
-                Serial.printf("Registered: %s\n", info.registered ? "YES" : "NO");
-                Serial.printf("RSSI: %d, RSRP: %d dBm, RSRQ: %d dB, SINR: %d dB\n",
-                             info.signal.rssi, info.signal.rsrp, 
-                             info.signal.rsrq, info.signal.sinr);
-            }
-            Serial.println("=====================================\n");
-        }
-        else if (line == "LTE_INFO")
-        {
-            DeviceInfo dev_info;
-            if (modem.getDeviceInfo(dev_info))
-            {
-                Serial.println("\n========== Device Info ==========");
-                Serial.printf("Manufacturer: %s\n", dev_info.manufacturer);
-                Serial.printf("Model: %s\n", dev_info.model);
-                Serial.printf("Firmware: %s\n", dev_info.fw_version);
-                Serial.printf("IMEI: %s\n", dev_info.imei);
-                Serial.printf("IMSI: %s\n", dev_info.imsi);
-                Serial.println("==================================\n");
-            }
-        }
-        else if (line == "HELP_LTE")
-        {
-            Serial.println("\nLTE Commands:");
-            Serial.println("  AT<command>   - Send raw AT command");
-            Serial.println("  LTE_STATUS    - Show current network status");
-            Serial.println("  LTE_INFO      - Show device information");
-            Serial.println("  HELP_LTE      - Show this help");
-            Serial.println();
-        }
-    }
-}
-
-
 // ============================================================
 // Setup
 // ============================================================
@@ -290,56 +183,6 @@ void setup()
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
-  Serial.println("Starting EC200U initialization...");
-      // Manual EC200U test
-    Serial1.begin(115200, SERIAL_8N1, 18, 17);
-    delay(1000);
-    
-    Serial.println("\n=== Manual EC200U Test ===");
-    Serial.println("Sending AT commands manually...");
-    
-    for (int i = 0; i < 5; i++)
-    {
-        Serial1.flush();
-        while (Serial1.available()) Serial1.read();  // Clear buffer
-        
-        Serial1.print("AT\r\n");
-        Serial.println("[Sent] AT");
-        
-        unsigned long start = millis();
-        String response = "";
-        
-        while (millis() - start < 2000)
-        {
-            if (Serial1.available())
-            {
-                char c = Serial1.read();
-                response += c;
-                Serial.write(c);  // Print raw response
-            }
-        }
-        
-        Serial.printf("\n[Response] (%d chars): %s\n\n", response.length(), response.c_str());
-        delay(1000);
-    }
-
-  modem.enableDebug(true);
-  // if (!modem.begin()) {
-  //   Serial.println("FATAL: Modem initialization failed!");
-  // }
-
-      // Create LTE tasks
-    if (xTaskCreatePinnedToCore(taskLTEInit, "LTE-Init", 8192, NULL, 1, NULL, 0) != pdPASS)
-    {
-        Serial.println("[ERR] Failed to create LTE init task");
-    }
-    
-    if (xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 8192, NULL, 1, NULL, 1) != pdPASS)
-    {
-        Serial.println("[ERR] Failed to create LTE monitor task");
-    }
-
-
   rawQueue       = xQueueCreate(16, sizeof(RawFrame));
   eventQueue     = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
   freeEventQueue = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
@@ -370,10 +213,12 @@ void setup()
 //xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
   if (
       xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
-      xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskDetector, "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskWsLoop, "WS", 12288, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSpeedMatch, "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskLTEInit, "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 1, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskWebServer, "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS)
   {
     Serial.println("[ERR] Failed to create task");
@@ -387,8 +232,5 @@ void setup()
 
 void loop()
 {
-  // Handle LTE serial commands
-    handleLTECommands();
-
   vTaskDelay(portMAX_DELAY);
 }
