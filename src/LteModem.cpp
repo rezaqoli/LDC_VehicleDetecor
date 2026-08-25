@@ -57,34 +57,39 @@ static void printLteInfo()
 
 static bool initEc200u()
 {
-  if (!modem.testAT(10000L))
-  {
-    Serial.println("[LTE] FATAL: Modem did not answer AT");
-    return false;
-  }
+    if (!modem.testAT(10000L))
+    {
+        Serial.println("[LTE] FATAL: Modem did not answer AT");
+        return false;
+    }
+    modem.sendAT("E0");
+    if (modem.waitResponse(3000L) != 1)
+        Serial.println("[LTE] Warning: failed to disable echo");
+    
+    modem.sendAT("+CMEE=2"); // Enable verbose error codes
+    modem.waitResponse(3000L);
+    
+    Serial.printf("[LTE] Modem: %s\n", modem.getModemName().c_str());
+    
+    SimStatus simStatus = modem.getSimStatus(15000L);
+    
+    // --- ADD THIS DEBUG LINE ---
+    Serial.printf("[LTE] DEBUG: SimStatus Enum Value = %d\n", (int)simStatus);
+    // ---------------------------
 
-  modem.sendAT("E0");
-  if (modem.waitResponse(3000L) != 1)
-    Serial.println("[LTE] Warning: failed to disable echo");
-
-  modem.sendAT("+CMEE=2");
-  modem.waitResponse(3000L);
-
-  Serial.printf("[LTE] Modem: %s\n", modem.getModemName().c_str());
-
-  SimStatus simStatus = modem.getSimStatus(15000L);
-  if (simStatus == SIM_LOCKED)
-  {
-    Serial.println("[LTE] FATAL: SIM is PIN locked");
-    return false;
-  }
-  if (simStatus != SIM_READY)
-  {
-    Serial.println("[LTE] FATAL: SIM is not ready");
-    return false;
-  }
-
-  return true;
+    if (simStatus == SIM_LOCKED)
+    {
+        Serial.println("[LTE] FATAL: SIM is PIN locked");
+        return false;
+    }
+    if (simStatus != SIM_READY)
+    {
+        Serial.println("[LTE] FATAL: SIM is not ready");
+        // Optional: Print more info if available
+        // Serial.printf("[LTE] Last Error: %s\n", modem.getLastError().c_str());
+        return false;
+    }
+    return true;
 }
 
 void taskLTEInit(void *)
