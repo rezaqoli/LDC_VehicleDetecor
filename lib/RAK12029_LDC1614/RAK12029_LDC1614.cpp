@@ -271,3 +271,24 @@ template s32 RAK12029_LDC1614_Inductive::LDC1614_set_mux_config<SoftWire>(SoftWi
 template s32 RAK12029_LDC1614_Inductive::LDC1614_reset_sensor<SoftWire>(SoftWire &);
 template s32 RAK12029_LDC1614_Inductive::LDC1614_set_driver_current<SoftWire>(SoftWire &, u8, u16);
 template u32 RAK12029_LDC1614_Inductive::LDC1614_get_sensor_status<SoftWire>(SoftWire &);
+
+
+template s32 RAK12029_LDC1614_Inductive::IIC_write_byte<TwoWire>(TwoWire &, u8, u8);
+template s32 RAK12029_LDC1614_Inductive::IIC_write_16bit<TwoWire>(TwoWire &, u8, u16);
+template void RAK12029_LDC1614_Inductive::IIC_read_byte<TwoWire>(TwoWire &, u8, u8 *);
+template s32 RAK12029_LDC1614_Inductive::IIC_read_16bit<TwoWire>(TwoWire &, u8, u16 *);
+template void RAK12029_LDC1614_Inductive::LDC1614_read_sensor_infomation<TwoWire>(TwoWire &);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_init<TwoWire>(TwoWire &);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_single_channel_config<TwoWire>(TwoWire &, u8, float, float);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_mutiple_channel_config<TwoWire>(TwoWire &, float, float);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_get_channel_result<TwoWire>(TwoWire &, u8, u32 *);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_time<TwoWire>(TwoWire &, u8, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_conversion_offset<TwoWire>(TwoWire &, u8, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_LC_stabilize_time<TwoWire>(TwoWire &, u8);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_FIN_LDC1614_Fref_DIV<TwoWire>(TwoWire &, u8);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_ERROR_CONFIG<TwoWire>(TwoWire &, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_sensor_config<TwoWire>(TwoWire &, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_mux_config<TwoWire>(TwoWire &, u16);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_reset_sensor<TwoWire>(TwoWire &);
+template s32 RAK12029_LDC1614_Inductive::LDC1614_set_driver_current<TwoWire>(TwoWire &, u8, u16);
+template u32 RAK12029_LDC1614_Inductive::LDC1614_get_sensor_status<TwoWire>(TwoWire &);

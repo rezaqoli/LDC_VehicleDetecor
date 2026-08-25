@@ -18,6 +18,7 @@ class WebSocketsServer;
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "EC200U_LTE.h"
 
 // ============================================================
 // Loop Configuration & State (depends on EventResult)
@@ -123,3 +124,5 @@ extern WebSocketsServer webSocket;
 // ============================================================
 extern uint32_t cpu_usage_core0;
 extern uint32_t cpu_usage_core1;
+
+extern EC200U_LTE modem;

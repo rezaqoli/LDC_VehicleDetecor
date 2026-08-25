@@ -6,6 +6,7 @@
 #include <WebServer.h>
 #include <WebSocketsServer_Generic.h>
 #include <SoftWire.h>
+
 #include "config.h"
 #include "Globals.h"
 
@@ -18,15 +19,14 @@
 #include "WsUtils.h"
 #include "WsCommandHandler.h"
 #include "Tasks.h"
-
 // ============================================================
 // Global Object Definitions
 // ============================================================
 #ifdef ESP32s3
   TwoWire I2C_Bus0(0);
   TwoWire I2C_Bus1(1);
-#endif
-#ifdef ESP32
+#else
+  #ifdef ESP32
   SoftWire I2C_Bus0(SDA, SCL);
   SoftWire I2C_Bus1(SDA2, SCL2);
   char swTxBuffer0[16];
@@ -34,7 +34,9 @@
   char swTxBuffer1[16];
   char swRxBuffer1[16];
   #define SW_TIMEOUT 40
+  #endif
 #endif
+
 
 RAK12029_LDC1614_Inductive ldc1(0x2A);
 RAK12029_LDC1614_Inductive ldc2(0x2A);
@@ -87,8 +89,14 @@ void wsSendToClient(uint8_t num, const char *msg)
 
 void wsBroadcast(const char *msg)
 {
-  if (msg)
+  if (!msg)
+    return;
+
+  if (wsMutex && xSemaphoreTake(wsMutex, pdMS_TO_TICKS(100)) == pdTRUE)
+  {
     webSocket.broadcastTXT(msg);
+    xSemaphoreGive(wsMutex);
+  }
 }
 
 void wsLoop()
@@ -116,8 +124,9 @@ void setup()
   digitalWrite(ESP_RUN_LED, LOW);
   I2C_Bus0.begin(SDA1, SCL1, 400000);
   I2C_Bus1.begin(SDA2, SCL2, 400000);
-  #endif
+  
   //#elifdef ESP32
+  #else
   #ifdef ESP32
   Serial.println("\n 1");
   I2C_Bus0.setTxBuffer(swTxBuffer0, sizeof(swTxBuffer0));
@@ -134,11 +143,17 @@ void setup()
   I2C_Bus1.begin();
   Serial.println("\n 4");
   #endif
+  #endif
 
   ldc1.LDC1614_reset_sensor(I2C_Bus0);
   ldc2.LDC1614_reset_sensor(I2C_Bus1);
-  configureSensor<SoftWire>(I2C_Bus0, ldc1, sensor1LC);
-  configureSensor<SoftWire>(I2C_Bus1, ldc2, sensor2LC);
+  #ifndef ESP32s3
+    configureSensor<SoftWire>(I2C_Bus0, ldc1, sensor1LC);
+    configureSensor<SoftWire>(I2C_Bus1, ldc2, sensor2LC);
+  #else
+    configureSensor<TwoWire>(I2C_Bus0, ldc1, sensor1LC);
+    configureSensor<TwoWire>(I2C_Bus1, ldc2, sensor2LC);
+  #endif
 
   latestData.valid = false;
   for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
@@ -149,6 +164,11 @@ void setup()
 
   //WiFi.mode(WIFI_STA);
   //WiFi.softAP("ESP-AP", NULL);
+  IPAddress ip(192, 168, 100, 232);
+  IPAddress gateway(192, 168, 100, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.config(ip, gateway, subnet);
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
   Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
@@ -159,6 +179,12 @@ void setup()
   ESP2SOTA.begin(&httpServer);
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
+
+  Serial.println("Starting EC200U initialization...");
+  modem.enableDebug(true);
+  if (!modem.begin()) {
+    Serial.println("FATAL: Modem initialization failed!");
+  }
 
   rawQueue       = xQueueCreate(16, sizeof(RawFrame));
   eventQueue     = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
@@ -189,6 +215,7 @@ void setup()
   }
 //xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
   if (
+      xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskDetector, "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskWsLoop, "WS", 12288, NULL, 2, NULL, 1) != pdPASS ||

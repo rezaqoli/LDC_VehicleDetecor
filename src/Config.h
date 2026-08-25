@@ -14,15 +14,20 @@
 #define SDA2        12
 #define SCL2        13
 #define ESP_RUN_LED 21
+#else
+  #ifdef ESP32
+  #define SDA1        13
+  #define SCL1        9
+  #define SDA2        11
+  #define SCL2        6
+  #define ESP_RUN_LED 7
+  #endif
 #endif
 
-#ifdef ESP32
-#define SDA1        13
-#define SCL1        9
-#define SDA2        11
-#define SCL2        6
-#define ESP_RUN_LED 7
-#endif
+#define SerialAT Serial1
+#define TINY_GSM_MODEM_QUECTEL
+#define TINY_GSM_RX_BUFFER 1024       // Increase receive buffer (optional)
+#define TINY_GSM_USE_GPRS true        // Enable GPRS (default)
 
 // ============================================================
 // Timing & Sampling
