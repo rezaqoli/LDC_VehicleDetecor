@@ -20,59 +20,81 @@ EC200U_LTE::~EC200U_LTE()
 // ========== Initialization ==========
 bool EC200U_LTE::begin()
 {
-  if (initialized)
-    return true;
-
-  Serial.println("[EC200U] Initializing...");
-
-  // Setup hardware serial
-  serial = &Serial1;
-  serial->begin(EC200U_BAUD_RATE, SERIAL_8N1, EC200U_RX_PIN, EC200U_TX_PIN);
-
-  // Setup pins
-  //pinMode(EC200U_PWR_PIN, OUTPUT);
-  pinMode(EC200U_RESET_PIN, OUTPUT);
-
-  // Power on device
-  if (!powerOn())
-  {
-    printDebug("[EC200U] Failed to power on");
-    return false;
-  }
-
-  // Wait for boot
-  uint32_t start = millis();
-  bool boot_ok = false;
-  while (millis() - start < AT_BOOT_TIMEOUT_MS)
-  {
-    ATResponse resp = sendCommand("AT", 1000);
-    if (resp.success)
+    if (initialized)
+        return true;
+    
+    Serial.println("[EC200U] Initializing...");
+    
+    // Setup hardware serial
+    serial = &Serial1;
+    serial->begin(EC200U_BAUD_RATE, SERIAL_8N1, EC200U_RX_PIN, EC200U_TX_PIN);
+    
+    // Give modem time to stabilize
+    delay(1000);
+    
+    // Setup pins
+    pinMode(EC200U_RESET_PIN, OUTPUT);
+    
+    // Power on device
+    if (!powerOn())
     {
-      boot_time_ms = millis() - start;
-      printDebug("[EC200U] Device booted in %lu ms", boot_time_ms);
-      boot_ok = true;
-      break;
+        printDebug("[EC200U] Failed to power on");
+        return false;
     }
-    delay(500);
-  }
-
-  if (!boot_ok)
-  {
-    printDebug("[EC200U] Boot timeout or failed handshake");
-    state = EC200UState::ERROR_STATE;
-    return false;
-  }
-
-  // Configure device
-  atEcho(false);              // Disable echo
-  atTest();                   // Verify connection
-  getDeviceInfo(dv_info); // Get info
-
-  state = EC200UState::IDLE;
-  initialized = true;
-
-  printDebug("[EC200U] Initialized successfully");
-  return true;
+    
+    // Wait longer for boot
+    uint32_t start = millis();
+    bool boot_ok = false;
+    
+    // First, try to disable echo blindly (in case it's enabled)
+    Serial.println("[EC200U] Attempting to disable echo...");
+    for (int i = 0; i < 3; i++)
+    {
+        flushBuffer();
+        serial->print("ATE0\r\n");
+        delay(500);
+        flushBuffer();
+    }
+    
+    // Now test with echo disabled
+    while (millis() - start < AT_BOOT_TIMEOUT_MS)
+    {
+        flushBuffer();
+        ATResponse resp = sendCommand("AT", 2000);
+        
+        if (resp.success)
+        {
+            boot_time_ms = millis() - start;
+            printDebug("[EC200U] Device booted in %lu ms", boot_time_ms);
+            boot_ok = true;
+            break;
+        }
+        
+        Serial.print(".");
+        delay(1000);
+    }
+    
+    Serial.println();
+    
+    if (!boot_ok)
+    {
+        printDebug("[EC200U] Boot timeout or failed handshake");
+        state = EC200UState::ERROR_STATE;
+        return false;
+    }
+    
+    // Configure device
+    atEcho(false);              // Disable echo (again, to be sure)
+    delay(100);
+    flushBuffer();
+    
+    atTest();                   // Verify connection
+    getDeviceInfo(dv_info);     // Get info
+    
+    state = EC200UState::IDLE;
+    initialized = true;
+    printDebug("[EC200U] Initialized successfully");
+    return true;
 }
 
 void EC200U_LTE::end()
