@@ -2,6 +2,7 @@
 // VehicleDetector.cpp  —  v5.2 Implementation
 // ============================================================
 #include "VehicleDetector.h"
+#include "MqttHandler.h" // Include the new header
 
 // ============================================================
 // Feature flag
@@ -945,4 +946,6 @@ void reportEvent(const EventResult &ev, void (*wsCallback)(const char *))
     Serial.printf("[%s] %.1fms peak=%.6f w50=%d class=%s len=%.1fm peaks=%d\n",
                   ev.channel_id, ev.duration_ms, ev.peak_dev, ev.width_half_max,
                   ev.vehicle_class, ev.estimated_length_m, ev.num_peaks);
+
+    mqttPublishEvent(msg);
 }

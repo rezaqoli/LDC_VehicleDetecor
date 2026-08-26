@@ -4,8 +4,8 @@ TinyGsm modem(SerialAT);
 TinyGsmClient lteClient(modem);
 SemaphoreHandle_t modemMutex = nullptr;
 
-static bool lteInitialized = false;
-static bool lteGprsConnected = false;
+bool lteInitialized = false;
+bool lteGprsConnected = false;
 
 static bool takeModem(uint32_t timeoutMs)
 {
@@ -66,8 +66,12 @@ static bool initEc200u()
     if (modem.waitResponse(3000L) != 1)
         Serial.println("[LTE] Warning: failed to disable echo");
     
-    modem.sendAT("+CMEE=2"); // Enable verbose error codes
-    modem.waitResponse(3000L);
+    modem.sendAT("+CREG=0"); // Disable network registration URCs
+    modem.waitResponse(2000L);
+    modem.sendAT("+CGREG=0"); // Disable GPRS registration URCs
+    modem.waitResponse(2000L);
+    // modem.sendAT("+CMEE=2"); // Enable verbose error codes
+    // modem.waitResponse(3000L);
     
     Serial.printf("[LTE] Modem: %s\n", modem.getModemName().c_str());
     

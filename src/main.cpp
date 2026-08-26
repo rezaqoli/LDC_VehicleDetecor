@@ -20,6 +20,7 @@
 #include "WsCommandHandler.h"
 #include "Tasks.h"
 #include "LteModem.h"
+#include "MqttHandler.h" // Add this include
 // ============================================================
 // Global Object Definitions
 // ============================================================
@@ -183,6 +184,11 @@ void setup()
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
+  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+  mqttClient.setCallback(mqttCallback);
+  mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60
+
+
   rawQueue       = xQueueCreate(16, sizeof(RawFrame));
   eventQueue     = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
   freeEventQueue = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
@@ -211,6 +217,8 @@ void setup()
     xQueueSend(freeWsMsgQueue, &slot, 0);
   }
 //xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
+// ||
+//       xTaskCreatePinnedToCore(taskMqttLoop, "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS
   if (
       xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskDetector, "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
@@ -219,7 +227,8 @@ void setup()
       xTaskCreatePinnedToCore(taskLTEInit, "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 1, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskWebServer, "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS)
+      xTaskCreatePinnedToCore(taskWebServer, "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS 
+      )
   {
     Serial.println("[ERR] Failed to create task");
     while (1)

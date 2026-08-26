@@ -37,6 +37,15 @@
 #define MODEM_BAUD_RATE 115200
 #define MODEM_APN "shatelmobile"
 
+// MQTT Configuration
+#define MQTT_SERVER "192.168.100.32" // Or your private broker IP
+#define MQTT_PORT 1883
+#define MQTT_CLIENT_ID "ESP32_Vehicle_Detector"
+#define MQTT_TOPIC_EVENTS "vehicles/events"
+#define MQTT_TOPIC_COMMANDS "vehicles/commands"
+#define MQTT_USER "" // Leave empty if no auth
+#define MQTT_PASS "" // Leave empty if no auth
+
 // ============================================================
 // Timing & Sampling
 // ============================================================
