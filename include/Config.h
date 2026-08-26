@@ -38,7 +38,7 @@
 #define MODEM_APN "shatelmobile"
 
 // MQTT Configuration
-#define MQTT_SERVER "192.168.100.32" // Or your private broker IP
+#define MQTT_SERVER "iot.iolink.ir"//"192.168.100.32" // Or your private broker IP
 #define MQTT_PORT 1883
 #define MQTT_CLIENT_ID "ESP32_Vehicle_Detector"
 #define MQTT_TOPIC_EVENTS "vehicles/events"

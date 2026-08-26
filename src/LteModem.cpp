@@ -1,4 +1,5 @@
 #include "LteModem.h"
+#include "WsUtils.h"
 
 TinyGsm modem(SerialAT);
 TinyGsmClient lteClient(modem);
@@ -57,53 +58,58 @@ static void printLteInfo()
 
 static bool initEc200u()
 {
-    if (!modem.testAT(10000L))
-    {
-        Serial.println("[LTE] FATAL: Modem did not answer AT");
-        return false;
-    }
-    modem.sendAT("E0");
-    if (modem.waitResponse(3000L) != 1)
-        Serial.println("[LTE] Warning: failed to disable echo");
-    
-    modem.sendAT("+CREG=0"); // Disable network registration URCs
-    modem.waitResponse(2000L);
-    modem.sendAT("+CGREG=0"); // Disable GPRS registration URCs
-    modem.waitResponse(2000L);
-    // modem.sendAT("+CMEE=2"); // Enable verbose error codes
-    // modem.waitResponse(3000L);
-    
-    Serial.printf("[LTE] Modem: %s\n", modem.getModemName().c_str());
-    
-    SimStatus simStatus = modem.getSimStatus(15000L);
-    
-    // --- ADD THIS DEBUG LINE ---
-    Serial.printf("[LTE] DEBUG: SimStatus Enum Value = %d\n", (int)simStatus);
-    // ---------------------------
+  if (!modem.testAT(10000L))
+  {
+    Serial.println("[LTE] FATAL: Modem did not answer AT");
+    wsSend("[LTE] FATAL: Modem did not answer AT");
+    return false;
+  }
+  modem.sendAT("E0");
+  if (modem.waitResponse(3000L) != 1)
+    Serial.println("[LTE] Warning: failed to disable echo");
 
-    if (simStatus == SIM_LOCKED)
-    {
-        Serial.println("[LTE] FATAL: SIM is PIN locked");
-        return false;
-    }
-    if (simStatus != SIM_READY)
-    {
-        Serial.println("[LTE] FATAL: SIM is not ready");
-        // Optional: Print more info if available
-        // Serial.printf("[LTE] Last Error: %s\n", modem.getLastError().c_str());
-        return false;
-    }
-    return true;
+  modem.sendAT("+CREG=0"); // Disable network registration URCs
+  modem.waitResponse(2000L);
+  modem.sendAT("+CGREG=0"); // Disable GPRS registration URCs
+  modem.waitResponse(2000L);
+  // modem.sendAT("+CMEE=2"); // Enable verbose error codes
+  // modem.waitResponse(3000L);
+
+  Serial.printf("[LTE] Modem: %s\n", modem.getModemName().c_str());
+
+  SimStatus simStatus = modem.getSimStatus(15000L);
+
+  // --- ADD THIS DEBUG LINE ---
+  Serial.printf("[LTE] DEBUG: SimStatus Enum Value = %d\n", (int)simStatus);
+  // ---------------------------
+
+  if (simStatus == SIM_LOCKED)
+  {
+    Serial.println("[LTE] FATAL: SIM is PIN locked");
+    wsSend("[LTE] FATAL: SIM is PIN locked");
+    return false;
+  }
+  if (simStatus != SIM_READY)
+  {
+    Serial.println("[LTE] FATAL: SIM is not ready");
+    wsSend("[LTE] FATAL: SIM is PIN locked");
+    // Optional: Print more info if available
+    // Serial.printf("[LTE] Last Error: %s\n", modem.getLastError().c_str());
+    return false;
+  }
+  return true;
 }
 
 void taskLTEInit(void *)
 {
   Serial.println("\n[LTE] Starting TinyGSM initialization...");
+  wsSend("\n[LTE] Starting TinyGSM initialization...");
 
   modemMutex = xSemaphoreCreateMutex();
   if (!modemMutex)
   {
     Serial.println("[LTE] Failed to create modem mutex");
+    wsSend("[LTE] Failed to create modem mutex");
     vTaskDelete(nullptr);
     return;
   }
@@ -118,11 +124,13 @@ void taskLTEInit(void *)
   if (!takeModem(1000))
   {
     Serial.println("[LTE] Failed to lock modem");
+    wsSend("[LTE] Failed to lock modem");
     vTaskDelete(nullptr);
     return;
   }
 
   Serial.println("[LTE] Initializing modem...");
+  wsSend("[LTE] Initializing modem...");
   if (!initEc200u())
   {
     giveModem();
@@ -134,6 +142,7 @@ void taskLTEInit(void *)
   Serial.printf("[LTE] IMEI: %s\n", modem.getIMEI().c_str());
 
   Serial.println("[LTE] Waiting for network registration...");
+  wsSend("[LTE] Waiting for network registration...");
   if (!modem.waitForNetwork(60000L, true))
   {
     Serial.println("[LTE] FATAL: Network registration failed");
@@ -142,12 +151,18 @@ void taskLTEInit(void *)
     return;
   }
 
-  Serial.printf("[LTE] Operator: %s\n", modem.getOperator().c_str());
-  Serial.printf("[LTE] Signal: %d/31\n", modem.getSignalQuality());
+  char msg[128];
+  snprintf(msg, sizeof(msg), "[LTE] Operator: %s\n", modem.getOperator().c_str());
+  Serial.printf(msg);
+  wsSend(msg);
+  snprintf(msg, sizeof(msg), "[LTE] Signal: %d/31\n", modem.getSignalQuality());
+  Serial.printf(msg);
+  wsSend(msg);
 
   Serial.printf("[LTE] Connecting APN: %s\n", MODEM_APN);
   lteGprsConnected = modem.gprsConnect(MODEM_APN, "", "");
   Serial.println(lteGprsConnected ? "[LTE] Data connection active" : "[LTE] FATAL: Data connection failed");
+  wsSend(lteGprsConnected ? "[LTE] Data connection active" : "[LTE] FATAL: Data connection failed");
 
   giveModem();
   vTaskDelete(nullptr);

@@ -163,10 +163,10 @@ th { background: #eef3f8; }
   <h2>🚗 Vehicle Classification — Length Bounds (meters)</h2>
   <div class="grid-9">
     <div><label class="small">Motor &lt;</label><input type="number" id="cl_motor" value="2.4" step="0.1"></div>
-    <div><label class="small">Car &lt;</label><input type="number" id="cl_car" value="4.5" step="0.1"></div>
-    <div><label class="small">Pickup &lt;</label><input type="number" id="cl_pickup" value="5.5" step="0.1"></div>
-    <div><label class="small">Van &lt;</label><input type="number" id="cl_van" value="7.0" step="0.1"></div>
-    <div><label class="small">Bus &lt;</label><input type="number" id="cl_bus" value="12.0" step="0.1"></div>
+    <div><label class="small">Car &lt;</label><input type="number" id="cl_car" value="4.0" step="0.1"></div>
+    <div><label class="small">Pickup &lt;</label><input type="number" id="cl_pickup" value="5.0" step="0.1"></div>
+    <div><label class="small">Van &lt;</label><input type="number" id="cl_van" value="6.5" step="0.1"></div>
+    <div><label class="small">Bus &lt;</label><input type="number" id="cl_bus" value="11.0" step="0.1"></div>
     <div><label class="small">TruckS &lt;</label><input type="number" id="cl_truckS" value="8.0" step="0.1"></div>
     <div><label class="small">Truck2 &lt;</label><input type="number" id="cl_truck2" value="10.5" step="0.1"></div>
     <div><label class="small">Truck3 &lt;</label><input type="number" id="cl_truck3" value="14.0" step="0.1"></div>
@@ -191,20 +191,20 @@ th { background: #eef3f8; }
     <div><label class="small">Energy Low</label><input type="number" id="cl_energy_low" value="0.00001" step="0.00001"></div>
     <div><label class="small">Energy Mid</label><input type="number" id="cl_energy_mid" value="0.00008" step="0.00001"></div>
     <div><label class="small">Energy High</label><input type="number" id="cl_energy_high" value="0.00020" step="0.00001"></div>
-    <div><label class="small">Crest Spiky</label><input type="number" id="cl_crest_spiky" value="2.8" step="0.1"></div>
-    <div><label class="small">Crest Broad</label><input type="number" id="cl_crest_broad" value="1.6" step="0.1"></div>
+    <div><label class="small">Crest Spiky</label><input type="number" id="cl_crest_spiky" value="1.6" step="0.1"></div>
+    <div><label class="small">Crest Broad</label><input type="number" id="cl_crest_broad" value="1.2" step="0.1"></div>
   </div>
 
   <h2 style="margin-top:14px; font-size:15px;">🎯 Symmetry & Width</h2>
   <div class="grid-4">
     <div><label class="small">Skew Tol</label><input type="number" id="cl_skew_tol" value="0.35" step="0.01"></div>
     <div><label class="small">Skew High</label><input type="number" id="cl_skew_high" value="0.75" step="0.01"></div>
-    <div><label class="small">COM Min</label><input type="number" id="cl_com_min" value="0.38" step="0.01"></div>
-    <div><label class="small">COM Max</label><input type="number" id="cl_com_max" value="0.62" step="0.01"></div>
+    <div><label class="small">COM Min</label><input type="number" id="cl_com_min" value="0.33" step="0.01"></div>
+    <div><label class="small">COM Max</label><input type="number" id="cl_com_max" value="0.50" step="0.01"></div>
   </div>
   <div class="grid-4" style="margin-top:6px;">
     <div><label class="small">Width Mid</label><input type="number" id="cl_width_mid" value="0.20" step="0.01"></div>
-    <div><label class="small">Width Wide</label><input type="number" id="cl_width_wide" value="0.45" step="0.01"></div>
+    <div><label class="small">Width Wide</label><input type="number" id="cl_width_wide" value="0.40" step="0.01"></div>
     <div><label class="small">Std High</label><input type="number" id="cl_std_high" value="0.35" step="0.01"></div>
     <div><label class="small">Std Low</label><input type="number" id="cl_std_low" value="0.18" step="0.01"></div>
   </div>

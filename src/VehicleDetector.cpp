@@ -568,100 +568,6 @@ void VehicleDetector::classify(EventResult &ev)
     int motor = 0, car = 0, pickup = 0, van = 0, bus = 0;
     int truck_s = 0, truck_2 = 0, truck_3 = 0, truck_4 = 0;
 
-    // 1. LENGTH CLASSIFICATION (heaviest weight)
-    if (len > 0.0f)
-    {
-        if (len < cfg_.motor_max_len)
-        {
-            motor += 8;
-            car += 1;
-        }
-        else if (len < cfg_.car_max_len)
-        {
-            car += 10;
-            pickup += 2;
-            motor += 1;
-        }
-        else if (len < cfg_.pickup_max_len)
-        {
-            pickup += 10;
-            car += 2;
-            van += 1;
-        }
-        else if (len < cfg_.van_max_len)
-        {
-            van += 10;
-            pickup += 2;
-            bus += 1;
-            truck_s += 5;
-        }
-        else if (len < cfg_.truck_s_max_len)
-        {
-            truck_s += 10;
-            van += 2;
-            truck_2 += 8;
-            bus += 4;
-        }
-        else if (len < cfg_.truck_2_max_len)
-        {
-            truck_2 += 10;
-            truck_s += 2;
-            truck_3 += 8;
-            bus += 6;
-        }
-        else if (len < cfg_.truck_3_max_len)
-        {
-            truck_3 += 10;
-            truck_2 += 4;
-            truck_4 += 5;
-            bus += 5;
-        }
-        else
-        {
-            truck_4 += 14;
-            truck_3 += 2;
-            bus += 4;
-        }
-    }
-
-    // 2. NUM PEAKS (axle count proxy)
-    if (peaks <= 1)
-    {
-        motor += 2;
-        car += 4;
-        van += 1;
-        truck_s += 2;
-        truck_2 = truck_3 = truck_4 = 0;
-    }
-    else if (peaks == 2)
-    {
-        car += 2;
-        pickup += 4;
-        van += 3;
-        truck_s += 2;
-        truck_2 += 2;
-    }
-    else if (peaks == 3)
-    {
-        truck_2 += 5;
-        truck_s += 3;
-        van += 2;
-        pickup += 1;
-        truck_3 += 2;
-    }
-    else if (peaks == 4)
-    {
-        truck_3 += 6;
-        truck_2 += 3;
-        truck_4 += 2;
-        bus += 2;
-    }
-    else
-    {
-        truck_4 += 7;
-        truck_3 += 3;
-        bus += 3;
-    }
 
     // 3. AXLE SPACING (normalized to meters)
     if (ev.peak_distance_ms > 0)
@@ -849,6 +755,143 @@ void VehicleDetector::classify(EventResult &ev)
         car += 1;
         van += 1;
         bus += 1;
+    }
+
+
+    // 2. NUM PEAKS (axle count proxy)
+    if (peaks <= 1)
+    {
+        motor += 2;
+        car += 2;
+        van += 2;
+        pickup  += 2;
+        truck_s += 2;
+        bus     +=2;
+        truck_2 = truck_3 = truck_4 = 0;
+    }
+    else if (peaks == 2)
+    {
+        //car += 2;
+        //pickup += 4;
+        motor = car = pickup = van = 0;
+        van += 3;
+        truck_s += 2;
+        truck_2 += 8;
+        truck_3 += 5;
+    }
+    else if (peaks == 3)
+    {
+        motor = car = pickup = van = truck_s = 0;
+        truck_2 += 5;
+        truck_s += 3;
+        van += 2;
+        pickup += 1;
+        truck_3 += 10;
+        truck_4 += 8;
+    }
+    else if (peaks == 4)
+    {
+        motor = car = pickup = van = truck_s = 0;
+        truck_3 += 16;
+        truck_2 += 12;
+        truck_4 += 20;
+        bus += 6;
+    }
+    else
+    {
+        motor = car = pickup = van = truck_s = 0;
+        truck_4 += 20;
+        truck_3 += 20;
+        bus += 6;
+    }
+
+        // 1. LENGTH CLASSIFICATION (heaviest weight)
+    if (len > 0.0f)
+    {
+        if (len < cfg_.motor_max_len)
+        {
+            motor += 8;
+            car += 1;
+            pickup = van = 0;
+            truck_s= 0;
+            bus    = 0;
+            truck_4= 0;
+            truck_3= 0;
+            truck_2= 0;
+
+        }
+        else if (len < cfg_.car_max_len)
+        {
+            car += 10;
+            pickup += 2;
+            motor += 1;
+
+            van    = 0;
+            truck_s= 0;
+            bus    = 0;
+            truck_4= 0;
+            truck_3= 0;
+            truck_2= 0;
+        }
+        else if (len < cfg_.pickup_max_len)
+        {
+            motor   = 0;
+            bus    = 0;
+            truck_4= 0;
+            truck_3= 0;
+            truck_2= 0;
+            pickup += 10;
+            car += 2;
+            van += 1;
+        }
+        else if (len < cfg_.van_max_len)
+        {
+            motor   = 0;
+            car     = 0;
+            bus    = 0;
+            truck_4= 0;
+            truck_3= 0;
+            truck_2= 0;
+            van += 10;
+            pickup += 2;
+            bus += 1;
+            truck_s += 5;
+        }
+        else if (len < cfg_.truck_s_max_len)
+        {
+            motor   = 0;
+            car     = 0;
+            truck_s += 10;
+            van += 2;
+            truck_2 += 8;
+            bus += 8;
+        }
+        else if (len < cfg_.truck_2_max_len)
+        {
+            motor   = 0;
+            car     = 0;
+            pickup  = 0;
+            truck_2 += 10;
+            truck_s += 2;
+            van     += 2;
+            truck_3 += 8;
+            bus += 8;
+        }
+        else if (len < cfg_.truck_3_max_len)
+        {
+            motor = car = pickup = truck_s  = 0;
+            truck_3 += 10;
+            truck_2 += 4;
+            truck_4 += 5;
+            bus += 8;
+        }
+        else
+        {
+            motor = car = pickup = van = truck_s = truck_2 = 0;
+            truck_4 += 14;
+            truck_3 += 2;
+            bus += 4;
+        }
     }
 
     // ========== Winner selection ==========

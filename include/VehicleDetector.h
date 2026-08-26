@@ -30,10 +30,10 @@ struct DetectorConfig
 
     // ========== Length-based classification bounds (meters) ==========
     float motor_max_len = 2.4f;
-    float car_max_len = 4.5f;
-    float pickup_max_len = 5.5f;
-    float van_max_len = 7.0f;
-    float bus_max_len = 12.0f;
+    float car_max_len = 4.0f;
+    float pickup_max_len = 5.0f;
+    float van_max_len = 6.5f;
+    float bus_max_len = 11.0f;
     float truck_s_max_len = 8.0f;
     float truck_2_max_len = 10.5f;
     float truck_3_max_len = 14.0f;
@@ -67,7 +67,7 @@ struct DetectorConfig
     uint32_t min_slow_enter_ms = 80;
     float peak_prominence_abs = 0.0002f;
 
-    uint32_t calib_samples = 1000;
+    uint32_t calib_samples = 640;
     uint32_t warmup_samples = 50;
     float baseline_alpha = 0.0004f;
 
