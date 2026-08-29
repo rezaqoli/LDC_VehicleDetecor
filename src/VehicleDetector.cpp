@@ -483,7 +483,7 @@ void VehicleDetector::extract_features(uint32_t end_us, EventResult &ev)
     {
         float max_mag = 0.0f;
         int max_bin = 1;
-        for (int k = 1; k <= 10 && k < n / 2; k++)
+        for (int k = 1; k <= 2 && k < n / 2; k++)
         {
             float re = 0, im = 0;
             float angle_step = -2.0f * PI * k / n;

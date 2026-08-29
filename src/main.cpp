@@ -166,16 +166,16 @@ void setup()
     speedState[i].last_type[sizeof(speedState[i].last_type) - 1] = '\0';
   }
 
-  //WiFi.mode(WIFI_STA);
-  //WiFi.softAP("ESP-AP", NULL);
-  IPAddress ip(192, 168, 100, 232);
-  IPAddress gateway(192, 168, 100, 1);
-  IPAddress subnet(255, 255, 255, 0);
-  WiFi.config(ip, gateway, subnet);
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP-AP", NULL);
+  // IPAddress ip(192, 168, 100, 232);
+  // IPAddress gateway(192, 168, 100, 1);
+  // IPAddress subnet(255, 255, 255, 0);
+  // WiFi.config(ip, gateway, subnet);
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
-  Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
+  // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  //Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
+  //Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
 
   httpServer.on("/", []
                 { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });

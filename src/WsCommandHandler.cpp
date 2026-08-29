@@ -46,6 +46,11 @@ static int parsePipeFloats(const String &s, float *out, int max)
   return cnt;
 }
 
+void processSystemCommand(const String &cmd)
+{
+  
+}
+
 // ============================================================
 // WebSocket Event Handler
 // ============================================================

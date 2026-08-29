@@ -8,12 +8,12 @@ SemaphoreHandle_t modemMutex = nullptr;
 bool lteInitialized = false;
 bool lteGprsConnected = false;
 
-static bool takeModem(uint32_t timeoutMs)
+bool takeModem(uint32_t timeoutMs)
 {
   return modemMutex && xSemaphoreTake(modemMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
 }
 
-static void giveModem()
+void giveModem()
 {
   if (modemMutex)
     xSemaphoreGive(modemMutex);

@@ -12,6 +12,10 @@ extern SemaphoreHandle_t modemMutex;
 extern bool lteInitialized;
 extern bool lteGprsConnected;
 
+bool takeModem(uint32_t timeoutMs);
+void giveModem();
+
+
 void taskLTEInit(void *);
 void taskLTEStatusMonitor(void *);
 void taskLTECommandConsole(void *);
