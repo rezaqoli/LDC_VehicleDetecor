@@ -43,6 +43,7 @@
 #define MQTT_CLIENT_ID "ESP32_Vehicle_Detector"
 #define MQTT_TOPIC_EVENTS "vehicles/events"
 #define MQTT_TOPIC_COMMANDS "vehicles/commands"
+#define MQTT_TOPIC_COMMAND_RESPONSES "vehicles/command_responses"
 #define MQTT_USER "" // Leave empty if no auth
 #define MQTT_PASS "" // Leave empty if no auth
 

@@ -92,7 +92,7 @@ static bool initEc200u()
   if (simStatus != SIM_READY)
   {
     Serial.println("[LTE] FATAL: SIM is not ready");
-    wsSend("[LTE] FATAL: SIM is PIN locked");
+    wsSend("[LTE] FATAL: SIM is not ready");
     // Optional: Print more info if available
     // Serial.printf("[LTE] Last Error: %s\n", modem.getLastError().c_str());
     return false;
@@ -173,7 +173,7 @@ void taskLTEStatusMonitor(void *)
   TickType_t wake = xTaskGetTickCount();
   while (true)
   {
-    vTaskDelayUntil(&wake, pdMS_TO_TICKS(15000));
+    vTaskDelayUntil(&wake, pdMS_TO_TICKS(60000));
 
     if (!lteInitialized || !takeModem(1000))
       continue;

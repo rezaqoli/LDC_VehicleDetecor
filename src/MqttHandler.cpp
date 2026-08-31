@@ -27,27 +27,99 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     }
 }
 
+void mqttCallback2(char *topic, byte *payload, unsigned int length)
+{
+    String message = "";
+    for (int i = 0; i < length; i++)
+    {
+        message += (char)payload[i];
+    }
+    Serial.printf("[MQTT] Command received: %s\n", message.c_str());
+
+    auto reply = [](const char *msg)
+    { mqttPublishEvent(msg); };
+    processSystemCommand(message, reply, length);
+}
+
+// bool mqttConnect()
+// {
+//     // NOTE: We do NOT lock the mutex here because PubSubClient.connect()
+//     // will internally call lteClient.connect() which needs the UART.
+//     // However, PubSubClient itself isn't aware of our mutex.
+//     // To be truly safe, we should only call this when we KNOW no other task is using the modem.
+
+//     if (mqttClient.connected())
+//         return true;
+
+//     Serial.print("[MQTT] Attempting connection...");
+//     if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS))
+//     {
+
+//         Serial.println("connected");
+//         mqttClient.subscribe(MQTT_TOPIC_COMMANDS);
+//         return true;
+//     }
+//     else
+//     {
+//         Serial.print("failed, rc=");
+//         Serial.print(mqttClient.state());
+//         return false;
+//     }
+// }
+
+// ------
+
 bool mqttConnect()
 {
-    // NOTE: We do NOT lock the mutex here because PubSubClient.connect()
-    // will internally call lteClient.connect() which needs the UART.
-    // However, PubSubClient itself isn't aware of our mutex.
-    // To be truly safe, we should only call this when we KNOW no other task is using the modem.
-
     if (mqttClient.connected())
         return true;
 
-    Serial.print("[MQTT] Attempting connection...");
+    Serial.println("\n[MQTT] ========================================");
+    Serial.printf("[MQTT] Attempting connection to: %s:%d\n", MQTT_SERVER, MQTT_PORT);
+
     if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS))
     {
-        Serial.println("connected");
+        mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE); // Increase buffer size if needed
+        Serial.println("[MQTT] SUCCESS: Connected to MQTT Broker!");
         mqttClient.subscribe(MQTT_TOPIC_COMMANDS);
+        Serial.printf("[MQTT] Subscribed to: %s\n", MQTT_TOPIC_COMMANDS);
+        Serial.println("[MQTT] ========================================\n");
         return true;
     }
     else
     {
-        Serial.print("failed, rc=");
-        Serial.print(mqttClient.state());
+        int state = mqttClient.state();
+        Serial.print("[MQTT] FAILED! State Code: ");
+        Serial.print(state);
+
+        // Translate the error code
+        if (state < 0)
+        {
+            Serial.println(" (Network / DNS Layer Error)");
+            if (state == -1)
+                Serial.println("  -> TIMEOUT: DNS resolution likely failed or server unreachable.");
+            else if (state == -2)
+                Serial.println("  -> LOST: Connection lost during handshake.");
+            else if (state == -3)
+                Serial.println("  -> REFUSED: TCP connection failed. DNS might have resolved to wrong IP, or port is blocked.");
+            else if (state == -4)
+                Serial.println("  -> DISCONNECTED: Client disconnected.");
+        }
+        else
+        {
+            Serial.println(" (MQTT Protocol Layer Error)");
+            if (state == 1)
+                Serial.println("  -> Bad Protocol Version");
+            else if (state == 2)
+                Serial.println("  -> Bad Client ID");
+            else if (state == 3)
+                Serial.println("  -> Server Unavailable");
+            else if (state == 4)
+                Serial.println("  -> Bad Username/Password");
+            else if (state == 5)
+                Serial.println("  -> Unauthorized (ACL denied by broker)");
+        }
+        Serial.println("[MQTT] ========================================\n");
         return false;
     }
 }
@@ -62,18 +134,68 @@ void mqttPublishEvent(const char *payload)
         }
         if (mqttClient.connected())
         {
-            mqttClient.publish(MQTT_TOPIC_EVENTS, payload);
+            // mqttClient.publish(MQTT_TOPIC_EVENTS, payload);
+            bool ok = mqttPublishLocked(MQTT_TOPIC_EVENTS, payload);
+            if (ok)
+            {
+                Serial.printf("[MQTT] Published event (%d bytes)\n", strlen(payload));
+            }
+            else
+            {
+                Serial.printf("[MQTT] FAILED event (%d bytes)\n", strlen(payload));
+            }
+        }
+        giveModem();
+    }
+    else
+    {
+        Serial.println("[MQTT] WARN: Could not lock modem for publish");
+    }
+}
+
+static bool mqttPublishLocked(const char *topic, const char *payload)
+{
+    if (!mqttClient.connected())
+        return false;
+
+    bool ok = mqttClient.publish(topic, payload);
+    if (!ok)
+    {
+        Serial.printf("[MQTT] Publish FAILED to %s (len=%d)\n",
+                      topic, payload ? strlen(payload) : 0);
+    }
+    return ok;
+}
+
+// -------------------------------------------------------
+// Public: publish command response
+// -------------------------------------------------------
+void mqttPublishResponse(const char* payload)
+{
+    if (!payload || !lteGprsConnected) return;
+
+    if (takeModem(3000))
+    {
+        if (!mqttClient.connected())
+            mqttConnect();
+
+        if (mqttClient.connected())
+        {
+            bool ok = mqttPublishLocked(MQTT_TOPIC_COMMAND_RESPONSES, payload);
+            if (ok)
+                Serial.printf("[MQTT] Published response (%d bytes)\n", strlen(payload));
         }
         giveModem();
     }
 }
+
 
 void taskMqttLoop(void *)
 {
     TickType_t wake = xTaskGetTickCount();
     while (true)
     {
-        vTaskDelayUntil(&wake, pdMS_TO_TICKS(1000)); // Check more frequently
+        vTaskDelayUntil(&wake, pdMS_TO_TICKS(10000)); // Check more frequently
 
         if (!lteGprsConnected)
         {
@@ -96,6 +218,8 @@ void taskMqttLoop(void *)
             {
                 mqttConnect();
             }
+            mqttPublishEvent("[MQTT] Heartbeat: LTE is up and running");
+            wsSend("[MQTT] Heartbeat: LTE is up and running");
             mqttClient.loop();
             giveModem();
         }

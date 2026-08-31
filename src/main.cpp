@@ -166,16 +166,15 @@ void setup()
     speedState[i].last_type[sizeof(speedState[i].last_type) - 1] = '\0';
   }
 
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP("ESP-AP", NULL);
-  // IPAddress ip(192, 168, 100, 232);
-  // IPAddress gateway(192, 168, 100, 1);
-  // IPAddress subnet(255, 255, 255, 0);
-  // WiFi.config(ip, gateway, subnet);
-
-  // WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  //Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
-  //Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
+  //WiFi.mode(WIFI_AP);
+  //WiFi.softAP("ESP-AP", NULL);
+  IPAddress ip(192, 168, 100, 232);
+  IPAddress gateway(192, 168, 100, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.config(ip, gateway, subnet);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
+  Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
 
   httpServer.on("/", []
                 { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
@@ -185,7 +184,7 @@ void setup()
   webSocket.onEvent(webSocketEvent);
 
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-  mqttClient.setCallback(mqttCallback);
+  mqttClient.setCallback(mqttCallback2);
   mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60
 
 
@@ -220,14 +219,15 @@ void setup()
 // ||
 //       xTaskCreatePinnedToCore(taskMqttLoop, "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS
   if (
-      xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
-      xTaskCreatePinnedToCore(taskDetector, "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
-      xTaskCreatePinnedToCore(taskWsLoop, "WS", 12288, NULL, 2, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskSpeedMatch, "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||
-      xTaskCreatePinnedToCore(taskLTEInit, "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 1, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 1, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskWebServer, "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS 
+      xTaskCreatePinnedToCore(taskMqttLoop,          "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskSensorReading,        "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskDetector,          "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskWsLoop,                   "WS", 12288, NULL, 2, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskSpeedMatch,           "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 6, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 5, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS 
       )
   {
     Serial.println("[ERR] Failed to create task");
