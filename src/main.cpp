@@ -1,5 +1,5 @@
 // ============================================================
-// ESP32-S3  —  LDC1614 Vehicle Detection  v4.5 (Modular)
+// ESP32-S3  —  LDC1614 Vehicle Detection  v7.0 (Modular)
 // ============================================================
 #include <Arduino.h>
 #include <WiFi.h>

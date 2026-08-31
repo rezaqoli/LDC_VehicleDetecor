@@ -235,6 +235,61 @@ th { background: #eef3f8; }
   <div class="small">Core 0: <span id="cpu0">0</span>% • Core 1: <span id="cpu1">0</span>%</div>
 </div>
 
+<div class="card" style="border-left: 4px solid #17a2b8;">
+  <h2>📈 Traffic Statistics</h2>
+  <div class="row">
+    <button onclick="sendCmd('GET_REPORT')">Get Report</button>
+    <button onclick="sendCmd('GET_REPORT|1')">Get Report + Clear</button>
+    <button class="danger" onclick="sendCmd('RESET_STATS')">Reset Stats</button>
+  </div>
+  <div id="trafficReport" style="margin-top:10px; padding:10px; background:#e8f4f8; border-radius:6px; font-size:13px; display:none;"></div>
+</div>
+
+<div class="card" style="border-left: 4px solid #ffc107;">
+  <h2>⏱️ Report Settings</h2>
+  <div class="row">
+    <label>Interval (min):</label><input type="number" id="rpt_interval" value="20" step="1" min="0">
+    <button onclick="sendReportInterval()">Set Interval</button>
+    <label>Auto Report:</label><select id="rpt_enable"><option value="1">ON</option><option value="0">OFF</option></select>
+    <button onclick="sendReportEnable()">Apply</button>
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <label>Clear on Report:</label><select id="rpt_clear"><option value="0">NO</option><option value="1">YES</option></select>
+    <button onclick="sendReportClear()">Apply</button>
+  </div>
+</div>
+
+<div class="card" style="border-left: 4px solid #dc3545;">
+  <h2>🚧 Traffic Rules</h2>
+  <div class="row">
+    <label>Speed Limit:</label><input type="number" id="rule_speed" value="100" step="1">
+    <label>Tolerance:</label><input type="number" id="rule_tol" value="5" step="1">
+    <label>Min Distance (m):</label><input type="number" id="rule_dist" value="30" step="1">
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <label>Min Headway (s):</label><input type="number" id="rule_headway" value="1.2" step="0.1">
+    <label>Max Headway (ms):</label><input type="number" id="rule_maxheadway" value="20000" step="1000">
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <label>Straddle MS:</label><input type="number" id="rule_straddle_ms" value="100" step="10">
+    <label>Straddle Ratio:</label><input type="number" id="rule_straddle_ratio" value="0.25" step="0.05">
+    <label>Assume Speed (km/h):</label><input type="number" id="rule_assume" value="0" step="1">
+    <button onclick="sendRules()">Apply SET_RULES</button>
+  </div>
+</div>
+
+<div class="card" style="border-left: 4px solid #6f42c1;">
+  <h2>🔗 Adjacent Loops (Lane Straddle)</h2>
+  <div class="row">
+    <label>S1:</label><select id="adj_s1"><option value="0">S1</option><option value="1">S2</option></select>
+    <label>Ch1:</label><select id="adj_ch1"><option>0</option><option>1</option><option>2</option><option>3</option></select>
+    <label>S2:</label><select id="adj_s2"><option value="0">S1</option><option value="1">S2</option></select>
+    <label>Ch2:</label><select id="adj_ch2"><option>0</option><option selected>1</option><option>2</option><option>3</option></select>
+    <label>Enable:</label><select id="adj_en"><option value="1">ON</option><option value="0">OFF</option></select>
+    <button onclick="sendAdjacent()">Apply SET_ADJACENT</button>
+  </div>
+</div>
+
 <div class="card">
   <h2>📨 Event Log & Classification Results</h2>
   <div id="eventLog" class="event-log">[System] Ready</div>
@@ -340,6 +395,21 @@ function sendSpeedPair(idx) {
 function sendDetectorConfig() {
   sendCmd('SET_DETECTOR|' + el('det_confirm').value + '|' + el('det_min_samples').value + '|' + el('det_peak_ratio').value + '|' + el('det_enter_hyst').value + '|' + el('det_exit_hyst').value);
 }
+function sendReportInterval() {
+  sendCmd('SET_REPORT_INTERVAL|' + el('rpt_interval').value);
+}
+function sendReportEnable() {
+  sendCmd('SET_REPORT_ENABLE|' + el('rpt_enable').value);
+}
+function sendReportClear() {
+  sendCmd('SET_REPORT_CLEAR|' + el('rpt_clear').value);
+}
+function sendRules() {
+  sendCmd('SET_RULES|' + el('rule_speed').value + '|' + el('rule_tol').value + '|' + el('rule_dist').value + '|' + el('rule_headway').value + '|' + el('rule_maxheadway').value + '|' + el('rule_straddle_ms').value + '|' + el('rule_straddle_ratio').value + '|' + el('rule_assume').value);
+}
+function sendAdjacent() {
+  sendCmd('SET_ADJACENT|' + el('adj_s1').value + '|' + el('adj_ch1').value + '|' + el('adj_s2').value + '|' + el('adj_ch2').value + '|' + el('adj_en').value);
+}
 
 function refreshAllData() {
   sendCmd('GET_STATUS');
@@ -371,6 +441,11 @@ function handleMessage(data) {
   } else if (data.startsWith('NOISE')) {
     parseNoise(data);
   } else if (data.startsWith('CALIBRATION_STARTED')) {
+    log('[Ack] ' + data);
+  } else if (data.startsWith('TRAFFIC_REPORT')) {
+    parseTrafficReport(data);
+  } else if (data.startsWith('RULES_ACK')) {
+    parseRulesAck(data);
     log('[Ack] ' + data);
   } else if (data.includes('_ACK')) {
     log('[Ack] ' + data);
@@ -573,6 +648,55 @@ function parseConfig(data) {
   }
   log('[Config] Received (see console)');
   console.log(data);
+}
+
+// -------- TRAFFIC_REPORT --------
+function parseTrafficReport(data) {
+  const div = el('trafficReport');
+  div.style.display = 'block';
+  const parts = data.split('|');
+  let html = '<b>Traffic Report</b><br>';
+  const labels = {
+    dur_s: 'Duration', total: 'Total Vehicles', avg_speed: 'Avg Speed',
+    speed_viol: 'Speed Violations', dist_viol: 'Distance Violations', lane_viol: 'Lane Violations'
+  };
+  for (let i = 1; i < parts.length; i++) {
+    const kv = parts[i].split(':');
+    if (kv.length !== 2) continue;
+    const key = kv[0], val = kv[1];
+    if (labels[key]) {
+      html += '<b>' + labels[key] + ':</b> ' + val;
+      if (key === 'avg_speed') html += ' km/h';
+      if (key === 'dur_s') html += 's';
+      html += '<br>';
+    } else if (key.endsWith('_cnt')) {
+      const cls = key.replace('_cnt', '');
+      html += '<b>' + cls + ':</b> ' + val + ' vehicles';
+    } else if (key.endsWith('_avg')) {
+      const cls = key.replace('_avg', '');
+      html += ' (avg ' + val + ' km/h)<br>';
+    }
+  }
+  div.innerHTML = html;
+  log('[Report] Traffic report received');
+}
+
+// -------- RULES_ACK --------
+function parseRulesAck(data) {
+  const parts = data.split('|');
+  for (let i = 1; i < parts.length; i++) {
+    const kv = parts[i].split(':');
+    if (kv.length !== 2) continue;
+    const k = kv[0], v = kv[1];
+    if (k === 'limit') el('rule_speed').value = v;
+    else if (k === 'tol') el('rule_tol').value = v;
+    else if (k === 'min_dist') el('rule_dist').value = v;
+    else if (k === 'min_headway') el('rule_headway').value = v;
+    else if (k === 'max_headway') el('rule_maxheadway').value = v;
+    else if (k === 'straddle_ms') el('rule_straddle_ms').value = v;
+    else if (k === 'straddle_ratio') el('rule_straddle_ratio').value = v;
+    else if (k === 'assume_kmh') el('rule_assume').value = v;
+  }
 }
 
 // initialize connection
