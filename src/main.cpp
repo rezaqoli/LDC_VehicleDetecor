@@ -183,6 +183,7 @@ void setup()
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
 
+  
   mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
   mqttClient.setCallback(mqttCallback2);
   mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60

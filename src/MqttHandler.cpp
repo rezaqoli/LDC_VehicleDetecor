@@ -41,6 +41,21 @@ void mqttCallback2(char *topic, byte *payload, unsigned int length)
     processSystemCommand(message, reply, length);
 }
 
+static bool mqttPublishLocked(const char *topic, const char *payload)
+{
+    if (!mqttClient.connected())
+        return false;
+
+    bool ok = mqttClient.publish(topic, payload);
+    if (!ok)
+    {
+        Serial.printf("[MQTT] Publish FAILED to %s (len=%d)\n",
+                      topic, payload ? strlen(payload) : 0);
+    }
+    return ok;
+}
+
+
 // bool mqttConnect()
 // {
 //     // NOTE: We do NOT lock the mutex here because PubSubClient.connect()
@@ -153,19 +168,6 @@ void mqttPublishEvent(const char *payload)
     }
 }
 
-static bool mqttPublishLocked(const char *topic, const char *payload)
-{
-    if (!mqttClient.connected())
-        return false;
-
-    bool ok = mqttClient.publish(topic, payload);
-    if (!ok)
-    {
-        Serial.printf("[MQTT] Publish FAILED to %s (len=%d)\n",
-                      topic, payload ? strlen(payload) : 0);
-    }
-    return ok;
-}
 
 // -------------------------------------------------------
 // Public: publish command response
