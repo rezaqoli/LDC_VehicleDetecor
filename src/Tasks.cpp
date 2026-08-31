@@ -5,6 +5,8 @@
 #include "SensorDriver.h"
 #include "WsUtils.h"
 #include "esp_timer.h"
+#include "TrafficStats.h"
+#include "TrafficMonitor.h"
 
 // ============================================================
 // Internal helpers (file-scoped)
@@ -107,6 +109,8 @@ void taskDetector(void *)
             continue;
           if (det[s][ch].feed(val, frame.ts_us, ev))
           {
+            trafficMonitorOnRawEvent(ev);
+
             if (det[s][ch].isDualLoopMode())
             {
               EventResult *slot = allocEventSlot();
@@ -120,6 +124,7 @@ void taskDetector(void *)
             else
             {
               reportEvent(ev, wsSend);
+              trafficMonitorOnSingleEvent(ev);
             }
           }
         }
@@ -262,6 +267,8 @@ void taskSpeedMatch(void *)
         strncpy(st.last_type, type, sizeof(st.last_type) - 1);
         st.last_type[sizeof(st.last_type) - 1] = '\0';
 
+        trafficMonitorOnDualMatch(i, st.e1, st.e2, st.last_speed_kmh);
+
         reportEvent(*st.e1, wsSend);
         reportEvent(*st.e2, wsSend);
 
@@ -337,5 +344,17 @@ void taskWsLoop(void *)
     }
 
     vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
+// ============================================================
+// Task: Traffic Stats Reporter (core 1, 4096 stack)
+// ============================================================
+void taskStatsReporter(void *)
+{
+  while (true)
+  {
+    trafficStatsPeriodic();
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }

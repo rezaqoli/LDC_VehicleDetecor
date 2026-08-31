@@ -3,6 +3,8 @@
 // ============================================================
 #include "WsCommandHandler.h"
 #include "WsUtils.h"
+#include "TrafficStats.h"
+#include "TrafficMonitor.h"
 
 namespace
 {
@@ -425,6 +427,139 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(const char *), ui
   {
     ESP.restart();
   }
+  else if (cmd.startsWith("GET_REPORT"))
+  {
+    bool clear_after = false;
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0)
+    {
+      int mode = cmd.substring(p_index + 1).toInt();
+      clear_after = (mode == 1);
+    }
+    String report = trafficStatsBuildReport(clear_after);
+    replyFunc(report.c_str());
+  }
+  else if (cmd.startsWith("RESET_STATS"))
+  {
+    trafficStatsReset();
+    replyFunc("STATS_RESET_ACK");
+  }
+  else if (cmd.startsWith("SET_REPORT_INTERVAL|"))
+  {
+    float p[1] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
+    {
+      uint32_t minutes = (uint32_t)p[0];
+      if (minutes == 0)
+      {
+        g_report_cfg.enabled = false;
+        g_report_cfg.interval_ms = 0;
+      }
+      else
+      {
+        g_report_cfg.enabled = true;
+        g_report_cfg.interval_ms = minutes * 60000UL;
+      }
+      char msg[64];
+      snprintf(msg, sizeof(msg), "REPORT_INTERVAL_ACK|%u", minutes);
+      replyFunc(msg);
+    }
+    else
+    {
+      replyFunc("ERROR|Invalid_report_interval");
+    }
+  }
+  else if (cmd.startsWith("SET_REPORT_ENABLE|"))
+  {
+    float p[1] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
+    {
+      g_report_cfg.enabled = ((int)p[0] != 0);
+      replyFunc(g_report_cfg.enabled ? "REPORT_ENABLE_ACK|1" : "REPORT_ENABLE_ACK|0");
+    }
+    else
+    {
+      replyFunc("ERROR|Invalid_report_enable");
+    }
+  }
+  else if (cmd.startsWith("SET_REPORT_CLEAR|"))
+  {
+    float p[1] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
+    {
+      g_report_cfg.periodic_clear = ((int)p[0] != 0);
+      replyFunc(g_report_cfg.periodic_clear ? "REPORT_CLEAR_ACK|1" : "REPORT_CLEAR_ACK|0");
+    }
+    else
+    {
+      replyFunc("ERROR|Invalid_report_clear");
+    }
+  }
+  else if (cmd.startsWith("SET_RULES|"))
+  {
+    float p[8] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index < 0)
+    {
+      replyFunc("ERROR|Invalid_rules");
+      return;
+    }
+    int count = parsePipeFloats(cmd.substring(p_index + 1), p, 8);
+    if (count >= 5)
+    {
+      g_traffic_rules.speed_limit_kmh = p[0];
+      g_traffic_rules.speed_tolerance_kmh = p[1];
+      g_traffic_rules.min_follow_distance_m = p[2];
+      g_traffic_rules.min_headway_s = p[3];
+      g_traffic_rules.max_headway_ms = (uint32_t)p[4];
+    }
+    if (count >= 7)
+    {
+      g_traffic_rules.min_straddle_overlap_ms = (uint32_t)p[5];
+      g_traffic_rules.min_straddle_overlap_ratio = p[6];
+    }
+    if (count >= 8)
+    {
+      g_traffic_rules.assume_speed_kmh = p[7];
+    }
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "RULES_ACK|limit:%.1f|tol:%.1f|min_dist:%.1f|min_headway:%.2f|max_headway:%lu|straddle_ms:%lu|straddle_ratio:%.2f|assume_kmh:%.1f",
+             g_traffic_rules.speed_limit_kmh,
+             g_traffic_rules.speed_tolerance_kmh,
+             g_traffic_rules.min_follow_distance_m,
+             g_traffic_rules.min_headway_s,
+             (unsigned long)g_traffic_rules.max_headway_ms,
+             (unsigned long)g_traffic_rules.min_straddle_overlap_ms,
+             g_traffic_rules.min_straddle_overlap_ratio,
+             g_traffic_rules.assume_speed_kmh);
+    replyFunc(msg);
+  }
+  else if (cmd.startsWith("SET_ADJACENT|"))
+  {
+    float p[5] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 5) == 5)
+    {
+      uint8_t s1 = (uint8_t)p[0];
+      uint8_t ch1 = (uint8_t)p[1];
+      uint8_t s2 = (uint8_t)p[2];
+      uint8_t ch2 = (uint8_t)p[3];
+      bool enabled = ((int)p[4] != 0);
+      trafficMonitorSetAdjacent(s1, ch1, s2, ch2, enabled);
+      char msg[64];
+      snprintf(msg, sizeof(msg), "ADJACENT_ACK|S%uC%u-S%uC%u|%d",
+               s1, ch1, s2, ch2, enabled ? 1 : 0);
+      replyFunc(msg);
+    }
+    else
+    {
+      replyFunc("ERROR|Invalid_adjacent");
+    }
+  }
 }
 
 // ============================================================
@@ -812,5 +947,138 @@ void webSocketEvent(uint8_t num, uint8_t type, uint8_t *payload, size_t len)
   else if (cmd.startsWith("RESET"))
   {
     ESP.restart();
+  }
+  else if (cmd.startsWith("GET_REPORT"))
+  {
+    bool clear_after = false;
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0)
+    {
+      int mode = cmd.substring(p_index + 1).toInt();
+      clear_after = (mode == 1);
+    }
+    String report = trafficStatsBuildReport(clear_after);
+    wsSendToClient(num, report.c_str());
+  }
+  else if (cmd.startsWith("RESET_STATS"))
+  {
+    trafficStatsReset();
+    wsSendToClient(num, "STATS_RESET_ACK");
+  }
+  else if (cmd.startsWith("SET_REPORT_INTERVAL|"))
+  {
+    float p[1] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
+    {
+      uint32_t minutes = (uint32_t)p[0];
+      if (minutes == 0)
+      {
+        g_report_cfg.enabled = false;
+        g_report_cfg.interval_ms = 0;
+      }
+      else
+      {
+        g_report_cfg.enabled = true;
+        g_report_cfg.interval_ms = minutes * 60000UL;
+      }
+      char msg[64];
+      snprintf(msg, sizeof(msg), "REPORT_INTERVAL_ACK|%u", minutes);
+      wsSendToClient(num, msg);
+    }
+    else
+    {
+      wsSendToClient(num, "ERROR|Invalid_report_interval");
+    }
+  }
+  else if (cmd.startsWith("SET_REPORT_ENABLE|"))
+  {
+    float p[1] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
+    {
+      g_report_cfg.enabled = ((int)p[0] != 0);
+      wsSendToClient(num, g_report_cfg.enabled ? "REPORT_ENABLE_ACK|1" : "REPORT_ENABLE_ACK|0");
+    }
+    else
+    {
+      wsSendToClient(num, "ERROR|Invalid_report_enable");
+    }
+  }
+  else if (cmd.startsWith("SET_REPORT_CLEAR|"))
+  {
+    float p[1] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
+    {
+      g_report_cfg.periodic_clear = ((int)p[0] != 0);
+      wsSendToClient(num, g_report_cfg.periodic_clear ? "REPORT_CLEAR_ACK|1" : "REPORT_CLEAR_ACK|0");
+    }
+    else
+    {
+      wsSendToClient(num, "ERROR|Invalid_report_clear");
+    }
+  }
+  else if (cmd.startsWith("SET_RULES|"))
+  {
+    float p[8] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index < 0)
+    {
+      wsSendToClient(num, "ERROR|Invalid_rules");
+      return;
+    }
+    int count = parsePipeFloats(cmd.substring(p_index + 1), p, 8);
+    if (count >= 5)
+    {
+      g_traffic_rules.speed_limit_kmh = p[0];
+      g_traffic_rules.speed_tolerance_kmh = p[1];
+      g_traffic_rules.min_follow_distance_m = p[2];
+      g_traffic_rules.min_headway_s = p[3];
+      g_traffic_rules.max_headway_ms = (uint32_t)p[4];
+    }
+    if (count >= 7)
+    {
+      g_traffic_rules.min_straddle_overlap_ms = (uint32_t)p[5];
+      g_traffic_rules.min_straddle_overlap_ratio = p[6];
+    }
+    if (count >= 8)
+    {
+      g_traffic_rules.assume_speed_kmh = p[7];
+    }
+    char msg[256];
+    snprintf(msg, sizeof(msg),
+             "RULES_ACK|limit:%.1f|tol:%.1f|min_dist:%.1f|min_headway:%.2f|max_headway:%lu|straddle_ms:%lu|straddle_ratio:%.2f|assume_kmh:%.1f",
+             g_traffic_rules.speed_limit_kmh,
+             g_traffic_rules.speed_tolerance_kmh,
+             g_traffic_rules.min_follow_distance_m,
+             g_traffic_rules.min_headway_s,
+             (unsigned long)g_traffic_rules.max_headway_ms,
+             (unsigned long)g_traffic_rules.min_straddle_overlap_ms,
+             g_traffic_rules.min_straddle_overlap_ratio,
+             g_traffic_rules.assume_speed_kmh);
+    wsSendToClient(num, msg);
+  }
+  else if (cmd.startsWith("SET_ADJACENT|"))
+  {
+    float p[5] = {};
+    int p_index = cmd.indexOf('|');
+    if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 5) == 5)
+    {
+      uint8_t s1 = (uint8_t)p[0];
+      uint8_t ch1 = (uint8_t)p[1];
+      uint8_t s2 = (uint8_t)p[2];
+      uint8_t ch2 = (uint8_t)p[3];
+      bool enabled = ((int)p[4] != 0);
+      trafficMonitorSetAdjacent(s1, ch1, s2, ch2, enabled);
+      char msg[64];
+      snprintf(msg, sizeof(msg), "ADJACENT_ACK|S%uC%u-S%uC%u|%d",
+               s1, ch1, s2, ch2, enabled ? 1 : 0);
+      wsSendToClient(num, msg);
+    }
+    else
+    {
+      wsSendToClient(num, "ERROR|Invalid_adjacent");
+    }
   }
 }

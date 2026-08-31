@@ -8,3 +8,4 @@ void taskDetector(void *);
 void taskSpeedMatch(void *);
 void taskWebServer(void *);
 void taskWsLoop(void *);
+void taskStatsReporter(void *);

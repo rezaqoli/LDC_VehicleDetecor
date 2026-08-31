@@ -20,7 +20,8 @@
 #include "WsCommandHandler.h"
 #include "Tasks.h"
 #include "LteModem.h"
-#include "MqttHandler.h" // Add this include
+#include "MqttHandler.h"
+#include "TrafficStats.h"
 // ============================================================
 // Global Object Definitions
 // ============================================================
@@ -99,6 +100,14 @@ void wsBroadcast(const char *msg)
     webSocket.broadcastTXT(msg);
     xSemaphoreGive(wsMutex);
   }
+}
+
+void sendTrafficReport(const char *msg)
+{
+  if (!msg)
+    return;
+
+  wsBroadcast(msg);
 }
 
 void wsLoop()
@@ -198,6 +207,10 @@ void setup()
   i2c1Mutex      = xSemaphoreCreateMutex();
   wsMutex        = xSemaphoreCreateMutex();
   dataMutex      = xSemaphoreCreateMutex();
+
+  trafficStatsInit();
+  trafficStatsSetReportSender(sendTrafficReport);
+
   if (!rawQueue || !eventQueue || !freeEventQueue || !wsTxQueue || !freeWsMsgQueue || !i2c0Mutex || !i2c1Mutex || !wsMutex || !dataMutex)
   {
     Serial.println("[ERR] Failed to create queue/semaphore");
@@ -218,13 +231,13 @@ void setup()
   }
 //xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
 // ||
-//       xTaskCreatePinnedToCore(taskMqttLoop, "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS
+//xTaskCreatePinnedToCore(taskMqttLoop,          "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS ||
   if (
-      xTaskCreatePinnedToCore(taskMqttLoop,          "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSensorReading,        "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskDetector,          "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskWsLoop,                   "WS", 12288, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSpeedMatch,           "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 6, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 5, NULL, 1) != pdPASS ||
