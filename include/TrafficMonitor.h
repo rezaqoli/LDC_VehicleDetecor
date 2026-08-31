@@ -14,3 +14,5 @@ void trafficMonitorOnDualMatch(uint8_t pairIdx,
 void trafficMonitorSetAdjacent(uint8_t s1, uint8_t ch1,
                                uint8_t s2, uint8_t ch2,
                                bool enabled);
+
+void trafficMonitorSyncFromGeometry();

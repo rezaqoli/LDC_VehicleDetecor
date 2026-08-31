@@ -22,6 +22,7 @@
 #include "LteModem.h"
 #include "MqttHandler.h"
 #include "TrafficStats.h"
+#include "LoopGeometry.h"
 // ============================================================
 // Global Object Definitions
 // ============================================================
@@ -210,6 +211,7 @@ void setup()
 
   trafficStatsInit();
   trafficStatsSetReportSender(sendTrafficReport);
+  g_loopGeometry.loadDefaults();
 
   if (!rawQueue || !eventQueue || !freeEventQueue || !wsTxQueue || !freeWsMsgQueue || !i2c0Mutex || !i2c1Mutex || !wsMutex || !dataMutex)
   {

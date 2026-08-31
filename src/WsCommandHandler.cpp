@@ -5,6 +5,7 @@
 #include "WsUtils.h"
 #include "TrafficStats.h"
 #include "TrafficMonitor.h"
+#include "LoopGeometry.h"
 
 namespace
 {
@@ -401,6 +402,49 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(const char *), ui
       }
     }
     replyFunc(msg);
+  }
+  else if (cmd.startsWith("GET_CALIB_STATUS"))
+  {
+    char msg[1024];
+    int pos = 0;
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "CALIB_STATUS");
+    for (int s = 0; s < 2; s++)
+    {
+      for (int ch = 0; ch < 4; ch++)
+      {
+        pos += snprintf(msg + pos, sizeof(msg) - pos, "|%s:", det[s][ch].id());
+        det[s][ch].buildCalibStatus(msg + pos, sizeof(msg) - pos);
+        pos = strlen(msg);
+        if (pos >= (int)sizeof(msg) - 128) break;
+      }
+      if (pos >= (int)sizeof(msg) - 128) break;
+    }
+    replyFunc(msg);
+  }
+  else if (cmd.startsWith("GET_LOOP_GEOMETRY"))
+  {
+    char msg[1024];
+    g_loopGeometry.buildStatusString(msg, sizeof(msg));
+    replyFunc(msg);
+  }
+  else if (cmd.startsWith("SET_LOOP_GEOMETRY|") || cmd.startsWith("SET_LOOP_ADD|") || cmd.startsWith("SET_LOOP_DONE"))
+  {
+    if (g_loopGeometry.parseFromCommand(cmd))
+    {
+      if (cmd.startsWith("SET_LOOP_DONE"))
+      {
+        trafficMonitorSyncFromGeometry();
+        replyFunc("LOOP_GEOMETRY_ACK|adjacency_computed");
+      }
+      else
+      {
+        replyFunc("LOOP_GEOMETRY_ACK");
+      }
+    }
+    else
+    {
+      replyFunc("ERROR|Invalid_loop_geometry");
+    }
   }
   else if (cmd.startsWith("SET_DEFAULT_KMH"))
   {
@@ -922,6 +966,49 @@ void webSocketEvent(uint8_t num, uint8_t type, uint8_t *payload, size_t len)
       }
     }
     wsSendToClient(num, msg);
+  }
+  else if (cmd.startsWith("GET_CALIB_STATUS"))
+  {
+    char msg[1024];
+    int pos = 0;
+    pos += snprintf(msg + pos, sizeof(msg) - pos, "CALIB_STATUS");
+    for (int s = 0; s < 2; s++)
+    {
+      for (int ch = 0; ch < 4; ch++)
+      {
+        pos += snprintf(msg + pos, sizeof(msg) - pos, "|%s:", det[s][ch].id());
+        det[s][ch].buildCalibStatus(msg + pos, sizeof(msg) - pos);
+        pos = strlen(msg);
+        if (pos >= (int)sizeof(msg) - 128) break;
+      }
+      if (pos >= (int)sizeof(msg) - 128) break;
+    }
+    wsSendToClient(num, msg);
+  }
+  else if (cmd.startsWith("GET_LOOP_GEOMETRY"))
+  {
+    char msg[1024];
+    g_loopGeometry.buildStatusString(msg, sizeof(msg));
+    wsSendToClient(num, msg);
+  }
+  else if (cmd.startsWith("SET_LOOP_GEOMETRY|") || cmd.startsWith("SET_LOOP_ADD|") || cmd.startsWith("SET_LOOP_DONE"))
+  {
+    if (g_loopGeometry.parseFromCommand(cmd))
+    {
+      if (cmd.startsWith("SET_LOOP_DONE"))
+      {
+        trafficMonitorSyncFromGeometry();
+        wsSendToClient(num, "LOOP_GEOMETRY_ACK|adjacency_computed");
+      }
+      else
+      {
+        wsSendToClient(num, "LOOP_GEOMETRY_ACK");
+      }
+    }
+    else
+    {
+      wsSendToClient(num, "ERROR|Invalid_loop_geometry");
+    }
   }
   else if (cmd.startsWith("SET_DEFAULT_KMH"))
   {

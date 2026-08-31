@@ -1,5 +1,6 @@
 #include "TrafficMonitor.h"
 #include "TrafficStats.h"
+#include "LoopGeometry.h"
 #include "esp_timer.h"
 #include <cstring>
 #include <ctype.h>
@@ -389,4 +390,62 @@ void trafficMonitorSetAdjacent(uint8_t s1, uint8_t ch1,
             return;
         }
     }
+}
+
+// ============================================================
+// Sync adjacent pairs from LoopGeometry
+// ============================================================
+void trafficMonitorSyncFromGeometry()
+{
+    // Disable all existing pairs
+    for (int i = 0; i < ADJ_PAIR_COUNT; i++)
+    {
+        adjPairs[i].enabled = false;
+    }
+
+    // Rebuild from geometry
+    uint8_t count = 0;
+    for (int i = 0; i < g_loopGeometry.getLoopCount() && count < ADJ_PAIR_COUNT; i++)
+    {
+        const LoopGeometry &loop = g_loopGeometry.getLoop(i);
+        for (int a = 0; a < loop.adjacent_count && count < ADJ_PAIR_COUNT; a++)
+        {
+            int adjIdx = loop.adjacent_loops[a];
+            if (adjIdx < 0 || adjIdx >= g_loopGeometry.getLoopCount())
+                continue;
+            if (adjIdx <= i) continue; // avoid duplicates
+
+            const LoopGeometry &adj = g_loopGeometry.getLoop(adjIdx);
+
+            // Check if pair already exists
+            bool exists = false;
+            for (int j = 0; j < ADJ_PAIR_COUNT; j++)
+            {
+                if (adjPairs[j].s1 == loop.sensor_id && adjPairs[j].ch1 == loop.channel_id &&
+                    adjPairs[j].s2 == adj.sensor_id && adjPairs[j].ch2 == adj.channel_id)
+                {
+                    adjPairs[j].enabled = true;
+                    exists = true;
+                    break;
+                }
+                if (adjPairs[j].s1 == adj.sensor_id && adjPairs[j].ch1 == adj.channel_id &&
+                    adjPairs[j].s2 == loop.sensor_id && adjPairs[j].ch2 == loop.channel_id)
+                {
+                    adjPairs[j].enabled = true;
+                    exists = true;
+                    break;
+                }
+            }
+
+            if (!exists && count < ADJ_PAIR_COUNT)
+            {
+                adjPairs[count] = AdjacentPair(true,
+                    loop.sensor_id, loop.channel_id,
+                    adj.sensor_id, adj.channel_id);
+                count++;
+            }
+        }
+    }
+
+    Serial.printf("[TrafficMonitor] Synced %d adjacent pairs from geometry\n", count);
 }

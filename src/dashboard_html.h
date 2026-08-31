@@ -291,6 +291,23 @@ th { background: #eef3f8; }
   </div>
 </div>
 
+<div class="card" style="border-left: 4px solid #20c997;">
+  <h2>🗺️ Loop Geometry</h2>
+  <div class="row">
+    <label>Site ID:</label><input type="text" id="geo_site" value="SITE-01" style="min-width:80px">
+    <label>Lanes:</label><input type="number" id="geo_lanes" value="4" min="1" max="8">
+    <label>Lane Width (m):</label><input type="number" id="geo_lane_w" value="3.5" step="0.1">
+    <label>Speed Limit:</label><input type="number" id="geo_speed" value="100" step="1">
+    <label>Direction (deg):</label><input type="number" id="geo_dir" value="0" step="1">
+    <button onclick="sendLoopGeometry()">Set Site Config</button>
+  </div>
+  <div style="margin-top:8px; font-size:12px; color:#555;">
+    <b>Loop Map:</b> S1C0, S1C1, S1C2, S1C3, S2C0, S2C1, S2C2, S2C3
+    <button onclick="sendCmd('GET_LOOP_GEOMETRY')" style="margin-left:8px;">Refresh</button>
+  </div>
+  <div id="loopGeoStatus" style="margin-top:6px; padding:6px; background:#f0f0f0; border-radius:4px; font-size:12px; font-family:monospace; display:none;"></div>
+</div>
+
 <div class="card">
   <h2>📨 Event Log & Classification Results</h2>
   <div id="eventLog" class="event-log">[System] Ready</div>
@@ -411,6 +428,9 @@ function sendRules() {
 function sendAdjacent() {
   sendCmd('SET_ADJACENT|' + el('adj_s1').value + '|' + el('adj_ch1').value + '|' + el('adj_s2').value + '|' + el('adj_ch2').value + '|' + el('adj_en').value);
 }
+function sendLoopGeometry() {
+  sendCmd('SET_LOOP_GEOMETRY|' + el('geo_site').value + '|' + el('geo_lanes').value + '|' + el('geo_lane_w').value + '|' + el('geo_speed').value + '|' + el('geo_dir').value);
+}
 
 function refreshAllData() {
   sendCmd('GET_STATUS');
@@ -447,6 +467,8 @@ function handleMessage(data) {
     parseTrafficReport(data);
   } else if (data.startsWith('CALIB_STATUS')) {
     parseCalibStatus(data);
+  } else if (data.startsWith('LOOP_GEOMETRY')) {
+    parseLoopGeometry(data);
   } else if (data.startsWith('RULES_ACK')) {
     parseRulesAck(data);
     log('[Ack] ' + data);
@@ -706,6 +728,38 @@ function parseRulesAck(data) {
 function parseCalibStatus(data) {
   log('[Calib] ' + data);
   console.log(data);
+}
+
+// -------- LOOP_GEOMETRY --------
+function parseLoopGeometry(data) {
+  if (data.startsWith('LOOP_GEOMETRY_ACK')) {
+    log('[Ack] ' + data);
+    return;
+  }
+  const div = el('loopGeoStatus');
+  div.style.display = 'block';
+  const parts = data.split('|');
+  let html = '<b>Loop Geometry</b><br>';
+  for (let i = 1; i < parts.length; i++) {
+    const kv = parts[i].split(':');
+    if (kv.length === 2) {
+      const k = kv[0], v = kv[1];
+      if (k === 'site') { el('geo_site').value = v; html += '<b>Site:</b> ' + v + '<br>'; }
+      else if (k === 'lanes') { el('geo_lanes').value = v; html += '<b>Lanes:</b> ' + v + '<br>'; }
+      else if (k === 'lane_w') { el('geo_lane_w').value = v; html += '<b>Lane Width:</b> ' + v + 'm<br>'; }
+      else if (k === 'speed_limit') { el('geo_speed').value = v; html += '<b>Speed Limit:</b> ' + v + ' km/h<br>'; }
+      else if (k === 'dir') { el('geo_dir').value = v; html += '<b>Direction:</b> ' + v + '°<br>'; }
+      else if (k === 'loops') { html += '<b>Loop Count:</b> ' + v + '<br>'; }
+      else if (k.startsWith('S') && k.includes('C')) {
+        html += '<b>' + k + '</b>: lane=' + v.split('/')[2].replace('l','') +
+                ' x=' + v.split('/')[3].replace('x','') + 'm' +
+                ' y=' + v.split('/')[4].replace('y','') + 'm' +
+                ' adj=' + v.split('/')[5].replace('adj','') + '<br>';
+      }
+    }
+  }
+  div.innerHTML = html;
+  log('[Geometry] Loop geometry received');
 }
 
 // initialize connection
