@@ -18,6 +18,7 @@ VehicleDetector::VehicleDetector(const char *id, DetectorConfig cfg)
     strncpy(id_, id, sizeof(id_) - 1);
     id_[sizeof(id_) - 1] = '\0';
     reset_state(DetectorState::WARMUP);
+    calibrator_.begin(millis());
 }
 
 // ============================================================
@@ -38,9 +39,23 @@ float VehicleDetector::noisePercent() const
 }
 
 // ============================================================
+// Auto-Calibration Accessors
+// ============================================================
+AutoCalibrator &VehicleDetector::calibrator() { return calibrator_; }
+const AutoCalibrator &VehicleDetector::calibrator() const { return calibrator_; }
+float VehicleDetector::confidence() const { return calibrator_.confidence(); }
+float VehicleDetector::driftScore() const { return calibrator_.driftScore(); }
+SensorHealth VehicleDetector::health() const { return calibrator_.health(); }
+void VehicleDetector::buildCalibStatus(char *buf, size_t bufSize) const { calibrator_.buildStatusString(buf, bufSize); }
+
+// ============================================================
 // Calibration
 // ============================================================
-void VehicleDetector::startCalibration() { reset_state(DetectorState::CALIBRATING); }
+void VehicleDetector::startCalibration()
+{
+    reset_state(DetectorState::CALIBRATING);
+    calibrator_.startManualCalibration();
+}
 
 void VehicleDetector::finishCalibration()
 {
@@ -62,6 +77,9 @@ void VehicleDetector::finishCalibration()
     noise_rms_ = diff_rms * 0.70710678f;
     if (noise_rms_ < 1e-6f)
         noise_rms_ = noise_std_;
+
+    // Sync calibrator with initial calibration results
+    calibrator_.begin(millis());
 
     if (cfg_.auto_threshold)
     {
@@ -219,6 +237,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
 
     case DetectorState::IDLE:
     {
+        calibrator_.onSample(val, ts_us / 1000, false);
         update_baseline(val);
         float filtered = smoothInput(val);
         if (baseline_ <= 1e-6f)
@@ -251,6 +270,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
             if (above_thresh_count_ >= cfg_.confirm_samples)
             {
                 state_ = DetectorState::IN_EVENT;
+                calibrator_.onEventStart(ts_us / 1000);
                 ev_start_us_ = ts_us;
                 ev_peak_us_ = ts_us;
                 ev_peak_dev_ = dev;
@@ -303,6 +323,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
 
         if (exit_counter_ >= cfg_.exit_hysteresis_cnt && duration_ok && peak_ok && signal_cnt_ >= cfg_.min_event_samples)
         {
+            calibrator_.onEventEnd(ts_us / 1000);
             state_ = DetectorState::IDLE;
             extract_features(ts_us, result);
             classify(result);
@@ -990,5 +1011,7 @@ void reportEvent(const EventResult &ev, void (*wsCallback)(const char *))
                   ev.channel_id, ev.duration_ms, ev.peak_dev, ev.width_half_max,
                   ev.vehicle_class, ev.estimated_length_m, ev.num_peaks);
 
-    mqttPublishEvent(msg);
+    #ifdef ENABLE_MQTT
+        mqttPublishEvent(msg);
+    #endif
 }

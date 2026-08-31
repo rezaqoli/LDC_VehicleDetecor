@@ -1,5 +1,5 @@
 // ============================================================
-// VehicleDetector.h  —  v5.2 (Fleet Classification Optimized)
+// VehicleDetector.h  —  v5.3 (Auto-Calibration Enabled)
 // Declaration-only header; implementation in VehicleDetector.cpp
 // ============================================================
 #pragma once
@@ -7,6 +7,7 @@
 #include <cstring>
 #include <math.h>
 #include "SignalProcessing.h"
+#include "AutoCalibrator.h"
 
 // FreeRTOS types (always available on ESP32)
 #include "freertos/semphr.h"
@@ -169,11 +170,22 @@ public:
     void classify(EventResult &ev);
     void recalcThresholds();
 
+    // Auto-calibration accessors
+    AutoCalibrator &calibrator();
+    const AutoCalibrator &calibrator() const;
+    float confidence() const;
+    float driftScore() const;
+    SensorHealth health() const;
+    void buildCalibStatus(char *buf, size_t bufSize) const;
+
 private:
     DetectorConfig cfg_;
     char id_[8];
     DetectorState state_ = DetectorState::WARMUP;
     bool dual_loop_mode_ = false;
+
+    // Auto-calibration engine
+    AutoCalibrator calibrator_;
 
     double calib_sum_ = 0;
     uint32_t calib_cnt_ = 0;

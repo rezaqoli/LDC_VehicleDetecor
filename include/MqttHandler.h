@@ -1,6 +1,7 @@
 #pragma once
 #include "Config.h"
 
+#define MQTT_ENABLE 1
 #define MQTT_MAX_PACKET_SIZE 4096
 #define MQTT_KEEPALIVE 60
 

@@ -45,6 +45,7 @@ th { background: #eef3f8; }
   <button onclick="sendCmd('GET_SPEED_STATE')">Get Speed State</button>
   <button onclick="sendCmd('GET_STATUS')">Get Status</button>
   <button onclick="sendCmd('GET_NOISE')">Get Noise</button>
+  <button onclick="sendCmd('GET_CALIB_STATUS')">Get Calib Status</button>
   <button onclick="sendCmd('GET_CPU')">Get CPU</button>
   <button onclick="refreshAllData()">Refresh All</button>
   <button class="danger" onclick="if(confirm('Reboot ESP?')) sendCmd('RESET')">🔄 RESET</button>
@@ -444,6 +445,8 @@ function handleMessage(data) {
     log('[Ack] ' + data);
   } else if (data.startsWith('TRAFFIC_REPORT')) {
     parseTrafficReport(data);
+  } else if (data.startsWith('CALIB_STATUS')) {
+    parseCalibStatus(data);
   } else if (data.startsWith('RULES_ACK')) {
     parseRulesAck(data);
     log('[Ack] ' + data);
@@ -697,6 +700,12 @@ function parseRulesAck(data) {
     else if (k === 'straddle_ratio') el('rule_straddle_ratio').value = v;
     else if (k === 'assume_kmh') el('rule_assume').value = v;
   }
+}
+
+// -------- CALIB_STATUS --------
+function parseCalibStatus(data) {
+  log('[Calib] ' + data);
+  console.log(data);
 }
 
 // initialize connection
