@@ -26,10 +26,12 @@
 
 #define SerialAT Serial1
 #define TINY_GSM_MODEM_BG96
-#define TINY_GSM_RX_BUFFER 1024
-#define TINY_GSM_YIELD_MS 2
+#define TINY_GSM_RX_BUFFER 2048
+#define TINY_GSM_YIELD_MS 5
 #define TINY_GSM_USE_GPRS true
-#define TINY_GSM_DEBUG Serial
+// Disabled to prevent Serial contention / jumbled OK->KO logs during init
+// Enable only for modem debugging on separate port
+// #define TINY_GSM_DEBUG Serial
 
 #define MODEM_RX_PIN 18
 #define MODEM_TX_PIN 17

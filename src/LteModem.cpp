@@ -19,6 +19,122 @@ void giveModem()
     xSemaphoreGive(modemMutex);
 }
 
+// -------------------------------------------------------
+// Helper: drain UART completely
+// -------------------------------------------------------
+static void drainUart(uint32_t timeoutMs)
+{
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    while (SerialAT.available()) {
+      SerialAT.read();
+      start = millis(); // reset timeout if we got data
+    }
+    delay(2);
+  }
+}
+
+// -------------------------------------------------------
+// Helper: send raw AT command and wait for response
+// Returns true if expected response found
+// -------------------------------------------------------
+static bool sendAtAndWait(const char* cmd, const char* expected, uint32_t timeoutMs)
+{
+  SerialAT.print(cmd);
+  SerialAT.print("\r\n");
+  SerialAT.flush();
+
+  uint32_t start = millis();
+  String buffer = "";
+
+  while (millis() - start < timeoutMs) {
+    while (SerialAT.available()) {
+      char c = SerialAT.read();
+      if (c == '\r' || c == '\n') {
+        buffer.trim();
+        if (buffer.length() > 0) {
+          // Debug: log what we got
+          // Serial.printf("[AT-RX] '%s'\n", buffer.c_str());
+
+          if (buffer.indexOf(expected) >= 0) {
+            return true;
+          }
+          // If we see ERROR, abort early
+          if (buffer.indexOf("ERROR") >= 0) {
+            return false;
+          }
+          buffer = "";
+        }
+      } else {
+        buffer += c;
+      }
+    }
+    delay(1);
+  }
+  return false;
+}
+
+// -------------------------------------------------------
+// Helper: disable echo with verification
+// -------------------------------------------------------
+static bool disableEcho()
+{
+  // Try up to 3 times
+  for (int attempt = 0; attempt < 3; attempt++) {
+    drainUart(100);
+
+    // Send ATE0
+    SerialAT.print("ATE0\r\n");
+    SerialAT.flush();
+    delay(200);
+
+    // Drain response (should be "ATE0" echo + "OK" or just "OK")
+    drainUart(300);
+
+    // Now verify: send AT and check we do NOT see "AT" echoed back
+    SerialAT.print("AT\r\n");
+    SerialAT.flush();
+
+    uint32_t start = millis();
+    String buffer = "";
+    bool sawAtEcho = false;
+    bool sawOk = false;
+
+    while (millis() - start < 2000) {
+      while (SerialAT.available()) {
+        char c = SerialAT.read();
+        if (c == '\r' || c == '\n') {
+          buffer.trim();
+          if (buffer.length() > 0) {
+            if (buffer == "AT") {
+              sawAtEcho = true; // Echo is still ON!
+            }
+            if (buffer == "OK") {
+              sawOk = true;
+            }
+            buffer = "";
+          }
+        } else {
+          buffer += c;
+        }
+      }
+      delay(1);
+    }
+
+    if (sawOk && !sawAtEcho) {
+      Serial.println("[LTE] Echo disabled successfully");
+      return true;
+    }
+
+    Serial.printf("[LTE] Echo disable attempt %d failed (sawOk=%d sawAtEcho=%d)\n",
+                  attempt + 1, sawOk, sawAtEcho);
+    delay(500);
+  }
+
+  Serial.println("[LTE] WARNING: Could not verify echo disabled");
+  return false; // Continue anyway, might still work
+}
+
 static void printLteStatus()
 {
   if (!takeModem(5000))
@@ -58,30 +174,59 @@ static void printLteInfo()
 
 static bool initEc200u()
 {
-  if (!modem.testAT(10000L))
-  {
-    Serial.println("[LTE] FATAL: Modem did not answer AT");
-    wsSend("[LTE] FATAL: Modem did not answer AT");
-    return false;
+  // -------------------------------------------------
+  // Phase 1: Sync - establish clean communication
+  // -------------------------------------------------
+  Serial.println("[LTE] Phase 1: Syncing with modem...");
+
+  drainUart(500); // Clear any garbage
+
+  // Send a few bare AT commands to wake up and sync
+  for (int i = 0; i < 3; i++) {
+    if (sendAtAndWait("AT", "OK", 2000)) {
+      Serial.printf("[LTE] Sync OK on attempt %d\n", i + 1);
+      break;
+    }
+    delay(300);
   }
-  modem.sendAT("E0");
-  if (modem.waitResponse(3000L) != 1)
-    Serial.println("[LTE] Warning: failed to disable echo");
 
-  modem.sendAT("+CREG=0"); // Disable network registration URCs
-  modem.waitResponse(2000L);
-  modem.sendAT("+CGREG=0"); // Disable GPRS registration URCs
-  modem.waitResponse(2000L);
-  // modem.sendAT("+CMEE=2"); // Enable verbose error codes
-  // modem.waitResponse(3000L);
+  // -------------------------------------------------
+  // Phase 2: Disable echo (CRITICAL)
+  // -------------------------------------------------
+  Serial.println("[LTE] Phase 2: Disabling echo...");
+  disableEcho();
 
-  Serial.printf("[LTE] Modem: %s\n", modem.getModemName().c_str());
+  // -------------------------------------------------
+  // Phase 3: Disable URCs that spam the UART
+  // -------------------------------------------------
+  Serial.println("[LTE] Phase 3: Disabling URCs...");
+
+  sendAtAndWait("AT+CREG=0", "OK", 2000);  // Disable network reg URCs
+  delay(100);
+  sendAtAndWait("AT+CGREG=0", "OK", 2000); // Disable GPRS reg URCs
+  delay(100);
+  sendAtAndWait("AT+CEREG=0", "OK", 2000); // Disable EPS reg URCs (LTE)
+  delay(100);
+
+  // Optional: verbose errors
+  // sendAtAndWait("AT+CMEE=2", "OK", 2000);
+
+  // -------------------------------------------------
+  // Phase 4: Verify modem identity
+  // -------------------------------------------------
+  Serial.println("[LTE] Phase 4: Reading modem info...");
+
+  // Use TinyGSM methods now that echo is off
+  String modemName = modem.getModemName();
+  Serial.printf("[LTE] Modem: %s\n", modemName.c_str());
+
+  // -------------------------------------------------
+  // Phase 5: Check SIM
+  // -------------------------------------------------
+  Serial.println("[LTE] Phase 5: Checking SIM...");
 
   SimStatus simStatus = modem.getSimStatus(15000L);
-
-  // --- ADD THIS DEBUG LINE ---
-  Serial.printf("[LTE] DEBUG: SimStatus Enum Value = %d\n", (int)simStatus);
-  // ---------------------------
+  Serial.printf("[LTE] SimStatus = %d\n", (int)simStatus);
 
   if (simStatus == SIM_LOCKED)
   {
@@ -93,10 +238,10 @@ static bool initEc200u()
   {
     Serial.println("[LTE] FATAL: SIM is not ready");
     wsSend("[LTE] FATAL: SIM is not ready");
-    // Optional: Print more info if available
-    // Serial.printf("[LTE] Last Error: %s\n", modem.getLastError().c_str());
     return false;
   }
+
+  Serial.println("[LTE] SIM ready");
   return true;
 }
 
@@ -105,21 +250,35 @@ void taskLTEInit(void *)
   Serial.println("\n[LTE] Starting TinyGSM initialization...");
   wsSend("\n[LTE] Starting TinyGSM initialization...");
 
-  modemMutex = xSemaphoreCreateMutex();
-  if (!modemMutex)
-  {
-    Serial.println("[LTE] Failed to create modem mutex");
-    wsSend("[LTE] Failed to create modem mutex");
-    vTaskDelete(nullptr);
-    return;
+  if (!modemMutex) {
+    modemMutex = xSemaphoreCreateMutex();
+    if (!modemMutex)
+    {
+      Serial.println("[LTE] Failed to create modem mutex");
+      wsSend("[LTE] Failed to create modem mutex");
+      vTaskDelete(nullptr);
+      return;
+    }
   }
 
   pinMode(MODEM_RESET_PIN, OUTPUT);
-  digitalWrite(MODEM_RESET_PIN, HIGH);
-  delay(3000);
-
-  SerialAT.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+  // EC200U reset: active-LOW pulse, then HIGH, wait for boot
+  digitalWrite(MODEM_RESET_PIN, LOW);
   delay(300);
+  digitalWrite(MODEM_RESET_PIN, HIGH);
+
+  // Wait for modem boot - EC200U needs ~3-5s after reset
+  Serial.println("[LTE] Waiting for modem boot (5s)...");
+  delay(5000);
+
+  // Clean UART start
+  SerialAT.end();
+  delay(200);
+  SerialAT.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+
+  // Drain boot messages (RDY, APP RDY, +CPIN: READY, etc.)
+  //Serial.println("[LTE] Draining boot URCs...");
+  //drainUart(2000); // 2 seconds of draining
 
   if (!takeModem(1000))
   {
@@ -131,6 +290,7 @@ void taskLTEInit(void *)
 
   Serial.println("[LTE] Initializing modem...");
   wsSend("[LTE] Initializing modem...");
+
   if (!initEc200u())
   {
     giveModem();
@@ -211,8 +371,32 @@ void taskLTECommandConsole(void *)
     {
       if (takeModem(5000))
       {
-        modem.sendAT(line.substring(2));
-        modem.waitResponse(10000L);
+        // Use raw send for console to see full response
+        SerialAT.print(line.substring(2));
+        SerialAT.print("\r\n");
+        SerialAT.flush();
+
+        // Echo what we sent
+        Serial.printf("[AT-TX] %s\n", line.substring(2).c_str());
+
+        // Read response with timeout
+        uint32_t start = millis();
+        String buffer = "";
+        while (millis() - start < 10000L) {
+          while (SerialAT.available()) {
+            char c = SerialAT.read();
+            if (c == '\r' || c == '\n') {
+              buffer.trim();
+              if (buffer.length() > 0) {
+                Serial.printf("[AT-RX] %s\n", buffer.c_str());
+                buffer = "";
+              }
+            } else {
+              buffer += c;
+            }
+          }
+          delay(1);
+        }
         giveModem();
       }
       else
@@ -231,7 +415,7 @@ void taskLTECommandConsole(void *)
     else if (line == "HELP_LTE")
     {
       Serial.println("\nLTE Commands:");
-      Serial.println("  AT<command>  - Send raw AT command through TinyGSM");
+      Serial.println("  AT<command>  - Send raw AT command");
       Serial.println("  LTE_STATUS   - Show network/data status");
       Serial.println("  LTE_INFO     - Show modem identity");
       Serial.println("  HELP_LTE     - Show this help");
