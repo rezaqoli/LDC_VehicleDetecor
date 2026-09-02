@@ -362,6 +362,8 @@ function connect() {
 }
 
 function log(msg) {
+  // Drop high-rate sensor frames so the log stays useful.
+  if (typeof msg === 'string' && msg.indexOf('SENSOR_DATA|') === 0) return;
   const logEl = el('eventLog');
   const time = new Date().toLocaleTimeString();
   logEl.innerHTML = '[' + time + '] ' + msg + '<br>' + logEl.innerHTML;

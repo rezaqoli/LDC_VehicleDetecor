@@ -272,7 +272,10 @@ function sendRules(){
 }
 
 function handleMessage(d){
-  if (d.startsWith('MQTT_CFG|')) {
+  if (d.startsWith('SENSOR_DATA|')) {
+    // High-rate stream — ignore in log so important messages stay visible.
+    return;
+  } else if (d.startsWith('MQTT_CFG|')) {
     // MQTT_CFG|id|server|port|ip|user|pass|apn|topic_events|topic_commands|topic_responses
     const p = d.split('|');
     if (p.length >= 11) {

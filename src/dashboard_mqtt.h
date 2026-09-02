@@ -183,7 +183,42 @@ function publishTest(){
 }
 
 function handleMessage(d){
-  // Classify the message
+  // SENSOR_DATA is high-rate raw telemetry — not relevant on the MQTT panel.
+  if (d.startsWith('SENSOR_DATA|')) return;
+
+  // Only show messages relevant to the MQTT / LTE / system view.
+  const isRelevant =
+       d.startsWith('EVENT|')
+    || d.startsWith('TRAFFIC_REPORT')
+    || d.startsWith('SPEED|') || d.startsWith('SPEED_STATE|')
+    || d.startsWith('MQTT_')
+    || d.startsWith('CONFIG_ACK')
+    || d.startsWith('RULES_ACK')
+    || d.startsWith('REPORT_')
+    || d.startsWith('LOOP_GEOMETRY')
+    || d.startsWith('LC_ACK')
+    || d.startsWith('THRESHOLD_ACK')
+    || d.startsWith('EVENT_RANGE_ACK')
+    || d.startsWith('CLASSIFY_ACK')
+    || d.startsWith('DETECTOR_ACK')
+    || d.startsWith('AUTO_THRESH_ACK')
+    || d.startsWith('DEFAULT_KMH_ACK')
+    || d.startsWith('ADJACENT_ACK')
+    || d.startsWith('CALIBRATION_STARTED')
+    || d.startsWith('SAVE_ALL_ACK')
+    || d.startsWith('STATS_RESET_ACK')
+    || d.startsWith('STATUS')
+    || d.startsWith('NOISE')
+    || d.startsWith('CPU_ACK')
+    || d.startsWith('CALIB_STATUS')
+    || d.startsWith('CONFIG_')
+    || d.startsWith('ERROR');
+
+  if (!isRelevant) {
+    pushLine('sys', '[Filtered] ' + d.substring(0, 120));
+    return;
+  }
+
   if (d.startsWith('EVENT|')) {
     pushLine('out', '[OUT→MQTT] ' + d);
   } else if (d.startsWith('TRAFFIC_REPORT')) {
@@ -199,22 +234,10 @@ function handleMessage(d){
     pushLine('sys', '[SYS] MQTT server saved');
   } else if (d.startsWith('ERROR')) {
     pushLine('err', '[ERR] ' + d);
-  } else if (d.startsWith('STATS_RESET_ACK')) {
-    pushLine('sys', '[SYS] Stats reset');
   } else if (d.startsWith('SPEED|') || d.startsWith('SPEED_STATE|')) {
     pushLine('out', '[OUT→MQTT] ' + d);
-  } else if (d.startsWith('CONFIG_ACK') || d.startsWith('RULES_ACK') ||
-             d.startsWith('REPORT_INTERVAL_ACK') || d.startsWith('REPORT_ENABLE_ACK') ||
-             d.startsWith('REPORT_CLEAR_ACK') || d.startsWith('LOOP_GEOMETRY_ACK') ||
-             d.startsWith('LC_ACK') || d.startsWith('THRESHOLD_ACK') ||
-             d.startsWith('EVENT_RANGE_ACK') || d.startsWith('CLASSIFY_ACK') ||
-             d.startsWith('DETECTOR_ACK') || d.startsWith('AUTO_THRESH_ACK') ||
-             d.startsWith('DEFAULT_KMH_ACK') || d.startsWith('ADJACENT_ACK') ||
-             d.startsWith('CALIBRATION_STARTED') || d.startsWith('MQTT_ID_ACK') ||
-             d.startsWith('SAVE_ALL_ACK')) {
-    pushLine('sys', '[ACK] ' + d);
   } else {
-    pushLine('in', '[IN] ' + d);
+    pushLine('sys', '[SYS] ' + d);
   }
 }
 

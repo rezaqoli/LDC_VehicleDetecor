@@ -524,7 +524,7 @@ bool PersistentConfig::saveTrafficRules()
     if (!initialized)
         init();
 
-    char buf[512];
+    static char buf[512];
     snprintf(buf, sizeof(buf),
              "%d|%.1f|%.1f|%d|%.1f|%.1f|%lu|%.1f|%d|%lu|%.2f|%lu",
              g_traffic_rules.enable_speed_violation ? 1 : 0,
@@ -548,7 +548,8 @@ bool PersistentConfig::loadTrafficRules()
     if (!initialized)
         init();
 
-    char buf[512] = "";
+    static char buf[512];
+    buf[0] = '\0';
     getString("traffic_rules", buf, sizeof(buf), "");
 
     if (buf[0] == '\0')
@@ -644,7 +645,8 @@ bool PersistentConfig::saveLoopGeometry()
     if (!initialized)
         init();
 
-    char buf[2048];
+    static char buf[2048];
+    buf[0] = '\0';
     SiteGeometryConfig sc = g_loopGeometry.getSiteConfig();
     snprintf(buf, sizeof(buf),
              "%s|%u|%.1f|%.0f|%.0f|%u|%u",
@@ -679,7 +681,8 @@ bool PersistentConfig::loadLoopGeometry()
     if (!initialized)
         init();
 
-    char buf[2048] = "";
+    static char buf[2048];
+    buf[0] = '\0';
     getString("loop_geometry", buf, sizeof(buf), "");
 
     if (buf[0] == '\0')
@@ -690,11 +693,11 @@ bool PersistentConfig::loadLoopGeometry()
     }
 
     // Tokenize the buffer
-    const int MAX_TOKENS = 256;
-    const char *tokens[MAX_TOKENS];
+    static const int MAX_TOKENS = 256;
+    static const char *tokens[MAX_TOKENS];
     int tokenCount = 0;
 
-    char tmp[2048];
+    static char tmp[2048];
     strncpy(tmp, buf, sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
 
