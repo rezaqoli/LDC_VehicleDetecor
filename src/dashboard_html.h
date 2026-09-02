@@ -31,10 +31,16 @@ th { background: #eef3f8; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .class-result { background:#d4edda; border:1px solid #28a745; padding:10px; border-radius:6px; margin-top:8px; font-size:14px; }
+.nav a { margin-right: 10px; font-size: 13px; }
 </style>
 </head>
 <body>
 <h1>🚗 LDC1614 Fleet Dashboard v5.2</h1>
+<p class="nav">
+  <a href="/dev">/dev (Engineer)</a>
+  <a href="/tech">/tech (Technician)</a>
+  <a href="/mqtt">/mqtt (Monitor)</a>
+</p>
 <p>Connection: <span id="connStatus" class="status-disconnected">⚪ Disconnected</span></p>
 
 <div class="card">

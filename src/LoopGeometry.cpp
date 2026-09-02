@@ -61,7 +61,7 @@ void LoopGeometryManager::loadDefaults()
 // Site Config
 // ============================================================
 void LoopGeometryManager::setSiteConfig(const SiteGeometryConfig &cfg) { site_cfg_ = cfg; }
-SiteGeometryConfig LoopGeometryManager::getSiteConfig() const { return site_cfg_; }
+//const SiteGeometryConfig& LoopGeometryManager::getSiteConfig() const { return site_cfg_; }
 
 // ============================================================
 // Loop Access

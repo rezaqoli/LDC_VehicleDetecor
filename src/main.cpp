@@ -14,6 +14,8 @@
 #include <Wire.h>
 #include "RAK12029_LDC1614.h"
 #include "dashboard_html.h"
+#include "dashboard_tech.h"
+#include "dashboard_mqtt.h"
 #include <ESP2SOTA.h>
 
 #include "SensorDriver.h"
@@ -198,6 +200,23 @@ void setup()
 
   httpServer.on("/dev", []
                 { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
+  httpServer.on("/tech", []
+                { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_TECH_HTML); });
+  httpServer.on("/mqtt", []
+                { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_MQTT_HTML); });
+  httpServer.on("/", []()
+                {
+                  const char *idx =
+                    "<!DOCTYPE html><html><head><meta charset='utf-8'><title>LDC Dashboards</title>"
+                    "<style>body{font-family:Arial;margin:30px;}a{display:block;margin:8px 0;font-size:18px;}</style>"
+                    "</head><body>"
+                    "<h1>LDC1614 Dashboards</h1>"
+                    "<a href='/dev'>/dev &mdash; Engineer dashboard (sensors, detector, classification)</a>"
+                    "<a href='/tech'>/tech &mdash; Technician dashboard (system/MQTT/LC/loop config)</a>"
+                    "<a href='/mqtt'>/mqtt &mdash; MQTT monitor (live broker traffic & event log)</a>"
+                    "</body></html>";
+                  httpServer.send(200, "text/html; charset=utf-8", idx);
+                });
   httpServer.begin();
   ESP2SOTA.begin(&httpServer);
   webSocket.begin();

@@ -526,19 +526,19 @@ bool PersistentConfig::saveTrafficRules()
 
     char buf[512];
     snprintf(buf, sizeof(buf),
-             "%.1f|%.1f|%.1f|%.1f|%.1f|%.1f|%u|%.1f|%u|%u|%.2f|%u",
-             g_traffic_rules.enable_speed_violation ? 1.0f : 0.0f,
+             "%d|%.1f|%.1f|%d|%.1f|%.1f|%lu|%.1f|%d|%lu|%.2f|%lu",
+             g_traffic_rules.enable_speed_violation ? 1 : 0,
              g_traffic_rules.speed_limit_kmh,
              g_traffic_rules.speed_tolerance_kmh,
-             g_traffic_rules.enable_distance_violation ? 1.0f : 0.0f,
+             g_traffic_rules.enable_distance_violation ? 1 : 0,
              g_traffic_rules.min_follow_distance_m,
              g_traffic_rules.min_headway_s,
-             g_traffic_rules.max_headway_ms,
+             (unsigned long)g_traffic_rules.max_headway_ms,
              g_traffic_rules.assume_speed_kmh,
-             g_traffic_rules.enable_lane_violation ? 1.0f : 0.0f,
-             g_traffic_rules.min_straddle_overlap_ms,
+             g_traffic_rules.enable_lane_violation ? 1 : 0,
+             (unsigned long)g_traffic_rules.min_straddle_overlap_ms,
              g_traffic_rules.min_straddle_overlap_ratio,
-             g_traffic_rules.lane_violation_cooldown_ms);
+             (unsigned long)g_traffic_rules.lane_violation_cooldown_ms);
 
     return setString("traffic_rules", buf);
 }
@@ -553,29 +553,18 @@ bool PersistentConfig::loadTrafficRules()
 
     if (buf[0] == '\0')
     {
-        // Defaults already set in TrafficStats.cpp; just save
         saveTrafficRules();
         return true;
     }
 
     float p[12] = {};
-    int cnt = 0, start = 0;
-    while (cnt < 12)
+    int cnt = 0;
+    char *token = strtok(buf, "|");
+
+    while (token != NULL && cnt < 12)
     {
-        char *pipe = strchr(buf + start, '|');
-        if (!pipe)
-        {
-            String tok = String(buf + start);
-            tok.trim();
-            if (tok.length())
-                p[cnt++] = tok.toFloat();
-            break;
-        }
-        String tok = String(buf, start, pipe - (buf + start));
-        tok.trim();
-        if (tok.length())
-            p[cnt++] = tok.toFloat();
-        start = (pipe - buf) + 1;
+        p[cnt++] = atof(token);
+        token = strtok(NULL, "|");
     }
 
     if (cnt >= 12)
@@ -603,9 +592,9 @@ bool PersistentConfig::saveReportConfig()
         init();
 
     char buf[128];
-    snprintf(buf, sizeof(buf), "%u|%u|%u",
+    snprintf(buf, sizeof(buf), "%d|%lu|%d",
              g_report_cfg.enabled ? 1 : 0,
-             g_report_cfg.interval_ms,
+             (unsigned long)g_report_cfg.interval_ms,
              g_report_cfg.periodic_clear ? 1 : 0);
 
     return setString("report_cfg", buf);
@@ -626,23 +615,16 @@ bool PersistentConfig::loadReportConfig()
     }
 
     float p[3] = {};
-    int cnt = 0, start = 0;
-    while (cnt < 3)
+    int cnt = 0;
+    const char *ptr = buf;
+
+    while (*ptr && cnt < 3)
     {
-        char *pipe = strchr(buf + start, '|');
-        if (!pipe)
-        {
-            String tok = String(buf + start);
-            tok.trim();
-            if (tok.length())
-                p[cnt++] = tok.toFloat();
-            break;
-        }
-        String tok = String(buf, start, pipe - (buf + start));
-        tok.trim();
-        if (tok.length())
-            p[cnt++] = tok.toFloat();
-        start = (pipe - buf) + 1;
+        while (*ptr == ' ' || *ptr == '\t') ptr++;
+        char *endptr;
+        p[cnt++] = strtof(ptr, &endptr);
+        ptr = endptr;
+        while (*ptr == '|' || *ptr == ' ' || *ptr == '\t') ptr++;
     }
 
     if (cnt >= 3)
@@ -654,7 +636,6 @@ bool PersistentConfig::loadReportConfig()
 
     return true;
 }
-
 // ============================================================
 // Loop geometry persistence (string serialization)
 // ============================================================
@@ -732,33 +713,29 @@ bool PersistentConfig::loadLoopGeometry()
         return true;
     }
 
-    // tokens[0] = site_id
-    // tokens[1] = lane_count
-    // tokens[2] = lane_width
-    // tokens[3] = speed_limit
-    // tokens[4] = road_direction_deg
-    // tokens[5] = left_to_right
-    // tokens[6] = loop_count
-
-    SiteGeometryConfig sc;
-    snprintf(sc.site_id, sizeof(sc.site_id), "%s", tokens[0]);
-    sc.lane_count = (uint8_t)atoi(tokens[1]);
-    sc.lane_width_m = (float)atof(tokens[2]);
-    sc.speed_limit_kmh = (float)atof(tokens[3]);
-    sc.road_direction_deg = (float)atof(tokens[4]);
-    sc.left_to_right_direction = (atoi(tokens[5]) != 0);
-
+    // Parse site config from tokens first (into local vars, not into g_loopGeometry yet)
+    char site_id[32];
+    snprintf(site_id, sizeof(site_id), "%s", tokens[0]);
+    uint8_t lane_count = (uint8_t)atoi(tokens[1]);
+    float lane_width_m = (float)atof(tokens[2]);
+    float speed_limit_kmh = (float)atof(tokens[3]);
+    float road_direction_deg = (float)atof(tokens[4]);
+    bool left_to_right = (atoi(tokens[5]) != 0);
     uint8_t loop_count = (uint8_t)atoi(tokens[6]);
 
+    // NOW reset and fill — order matters!
     g_loopGeometry.reset();
-    snprintf(g_loopGeometry.getSiteConfig().site_id, sizeof(g_loopGeometry.getSiteConfig().site_id), "%s", sc.site_id);
-    g_loopGeometry.getSiteConfig().lane_count = sc.lane_count;
-    g_loopGeometry.getSiteConfig().lane_width_m = sc.lane_width_m;
-    g_loopGeometry.getSiteConfig().speed_limit_kmh = sc.speed_limit_kmh;
-    g_loopGeometry.getSiteConfig().road_direction_deg = sc.road_direction_deg;
-    g_loopGeometry.getSiteConfig().left_to_right_direction = sc.left_to_right_direction;
 
-    // Each loop has 12 fields: sensor_id|channel_id|lane_id|x_m|y_m|used_for_speed|used_for_lane_change|used_for_classification|adj0|adj1|adj2|adj3
+    // FIX: Use reference (&) to modify the actual internal config
+    SiteGeometryConfig &sc = g_loopGeometry.getSiteConfig();
+    snprintf(sc.site_id, sizeof(sc.site_id), "%s", site_id);
+    sc.lane_count = lane_count;
+    sc.lane_width_m = lane_width_m;
+    sc.speed_limit_kmh = speed_limit_kmh;
+    sc.road_direction_deg = road_direction_deg;
+    sc.left_to_right_direction = left_to_right;
+
+    // Each loop has 12 fields
     int pos = 7;
     for (uint8_t i = 0; i < loop_count && (pos + 12) <= tokenCount; i++)
     {
@@ -775,15 +752,18 @@ bool PersistentConfig::loadLoopGeometry()
         lg.adjacent_loops[1] = atoi(tokens[pos + 9]);
         lg.adjacent_loops[2] = atoi(tokens[pos + 10]);
         lg.adjacent_loops[3] = atoi(tokens[pos + 11]);
-        lg.adjacent_count = 0;
+        lg.adjacent_count = 0;  // Will be computed by setLoop or later
 
         g_loopGeometry.setLoop(i, lg);
         pos += 12;
     }
 
-    g_loopGeometry.getSiteConfig().left_to_right_direction = sc.left_to_right_direction;
+    // No need to re-set left_to_right — already done above
+    // Remove the duplicate line that was in the original
 
-    saveLoopGeometry();
+    // Don't call saveLoopGeometry() here — you just LOADED from NVS, no need to write back
+    // Only save if you modified something (which you didn't — you loaded)
+
     return true;
 }
 

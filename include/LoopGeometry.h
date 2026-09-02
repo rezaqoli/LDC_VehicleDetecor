@@ -64,6 +64,7 @@ struct SiteGeometryConfig
 class LoopGeometryManager
 {
 public:
+    SiteGeometryConfig site_cfg_;
     LoopGeometryManager();
 
     void reset();
@@ -71,7 +72,14 @@ public:
 
     // Configuration
     void setSiteConfig(const SiteGeometryConfig &cfg);
-    SiteGeometryConfig getSiteConfig() const;
+    SiteGeometryConfig& getSiteConfig() {
+        return this->site_cfg_;
+    }
+    
+    // Const version — read-only, works on const objects
+    const SiteGeometryConfig& getSiteConfig() const {
+        return this->site_cfg_;
+    }
 
     void setLoop(uint8_t index, const LoopGeometry &loop);
     LoopGeometry getLoop(uint8_t index) const;
@@ -96,9 +104,9 @@ public:
     float getLaneWidth() const { return site_cfg_.lane_width_m; }
     float getLoopDistance(uint8_t idx1, uint8_t idx2) const;
     uint8_t getLaneId(uint8_t sensor, uint8_t channel) const;
-
+    
 private:
-    SiteGeometryConfig site_cfg_;
+    
     LoopGeometry loops_[MAX_LOOPS];
     uint8_t loop_count_;
 
