@@ -7,6 +7,17 @@ PubSubClient mqttClient(lteClient);
 static void mqttPublishEventInternal(const char *payload);
 static void mqttPublishResponseInternal(const char *payload);
 
+void mqttInit()
+{
+    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+    mqttClient.setCallback(mqttCallback2);
+    mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60
+    mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
+    Serial.printf("[MQTT] Init: server=%s:%d client=%s keepalive=%d buf=%d\n",
+                  MQTT_SERVER, MQTT_PORT, mqttClientId,  // ← variable!
+                  MQTT_KEEPALIVE, MQTT_MAX_PACKET_SIZE);
+}
+
 void mqttCallback(char *topic, byte *payload, unsigned int length)
 {
     Serial.print("[MQTT] Message arrived [");
@@ -39,7 +50,7 @@ void mqttCallback2(char *topic, byte *payload, unsigned int length)
     }
     Serial.printf("[MQTT] Command received: %s\n", message.c_str());
 
-    auto reply = [](const char *msg)
+    auto reply = [](uint8_t num, const char *msg)
     { mqttPublishEventInternal(msg); };
     processSystemCommand(message, reply, length);
 }
@@ -57,7 +68,6 @@ static bool mqttPublishLocked(const char *topic, const char *payload)
     }
     return ok;
 }
-
 
 // bool mqttConnect()
 // {
@@ -95,9 +105,8 @@ bool mqttConnect()
     Serial.println("\n[MQTT] ========================================");
     Serial.printf("[MQTT] Attempting connection to: %s:%d\n", MQTT_SERVER, MQTT_PORT);
 
-    if (mqttClient.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS))
+    if (mqttClient.connect(mqttClientId, MQTT_USER, MQTT_PASS))
     {
-        mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE); // Increase buffer size if needed
         Serial.println("[MQTT] SUCCESS: Connected to MQTT Broker!");
         mqttClient.subscribe(MQTT_TOPIC_COMMANDS);
         Serial.printf("[MQTT] Subscribed to: %s\n", MQTT_TOPIC_COMMANDS);
@@ -175,13 +184,13 @@ void mqttPublishEvent(const char *payload)
     }
 }
 
-
 // -------------------------------------------------------
 // Public: publish command response
 // -------------------------------------------------------
-static void mqttPublishResponseInternal(const char* payload)
+static void mqttPublishResponseInternal(const char *payload)
 {
-    if (!payload || !lteGprsConnected) return;
+    if (!payload || !lteGprsConnected)
+        return;
 
     if (!mqttClient.connected())
         mqttConnect();
@@ -194,9 +203,10 @@ static void mqttPublishResponseInternal(const char* payload)
     }
 }
 
-void mqttPublishResponse(const char* payload)
+void mqttPublishResponse(const char *payload)
 {
-    if (!payload || !lteGprsConnected) return;
+    if (!payload || !lteGprsConnected)
+        return;
 
     if (takeModem(3000))
     {
@@ -204,7 +214,6 @@ void mqttPublishResponse(const char* payload)
         giveModem();
     }
 }
-
 
 void taskMqttLoop(void *)
 {

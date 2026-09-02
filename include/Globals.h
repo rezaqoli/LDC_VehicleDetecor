@@ -123,3 +123,6 @@ extern WebSocketsServer webSocket;
 // ============================================================
 extern uint32_t cpu_usage_core0;
 extern uint32_t cpu_usage_core1;
+
+
+extern char mqttClientId[32];   // Runtime MQTT client ID

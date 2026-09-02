@@ -2,6 +2,7 @@
 // ESP32-S3  —  LDC1614 Vehicle Detection  v7.0 (Modular)
 // ============================================================
 #include <Arduino.h>
+#include "PersistentConfig.h"
 #include <WiFi.h>
 #include <WebServer.h>
 #include <WebSocketsServer_Generic.h>
@@ -85,6 +86,8 @@ WebSocketsServer webSocket(81);
 const char* WIFI_SSID = "Akhtarniroo";
 const char* WIFI_PASSWORD = "@esp8266!";
 
+char mqttClientId[32] = "ESP32_Vehicle_Detector";  // Default, overridden by NVS
+
 void wsSendToClient(uint8_t num, const char *msg)
 {
   if (msg)
@@ -132,6 +135,12 @@ void setup()
   Serial.begin(115200);
   delay(300);
   Serial.println("\n[LDC1614 v4.5] Modular Build");
+
+  // Initialize persistent storage FIRST
+  PersistentConfig::init();
+  // Load MQTT Client ID from NVS (or use default if not set)
+  PersistentConfig::getMqttClientId(mqttClientId, sizeof(mqttClientId));
+  Serial.printf("[CFG] MQTT Client ID: %s\n", mqttClientId);
 
   #ifdef ESP32s3
   pinMode(ESP_RUN_LED, OUTPUT);
@@ -192,12 +201,6 @@ void setup()
   ESP2SOTA.begin(&httpServer);
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
-
-  
-  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
-  mqttClient.setCallback(mqttCallback2);
-  mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60
-
 
   rawQueue       = xQueueCreate(16, sizeof(RawFrame));
   eventQueue     = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));

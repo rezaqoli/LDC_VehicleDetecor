@@ -40,7 +40,8 @@
 // MQTT Configuration
 #define MQTT_SERVER "iot.iolink.ir"//"192.168.100.32" // Or your private broker IP
 #define MQTT_PORT 1883
-#define MQTT_CLIENT_ID "ESP32_Vehicle_Detector"
+//#define MQTT_CLIENT_ID "ESP32_Vehicle_Detector"
+extern char mqttClientId[32];   // Buffer for client ID, persisted in NVS
 #define MQTT_TOPIC_EVENTS "vehicles/events"
 #define MQTT_TOPIC_COMMANDS "vehicles/commands"
 #define MQTT_TOPIC_COMMAND_RESPONSES "vehicles/command_responses"
