@@ -140,6 +140,9 @@ void setup()
   PersistentConfig::getMqttClientId(mqttClientId, sizeof(mqttClientId));
   Serial.printf("[CFG] MQTT Client ID: %s\n", mqttClientId);
 
+  PersistentConfig::loadAllConfigs();
+  Serial.println("[NVS] All config loaded from storage");
+
   #ifdef ESP32s3
   pinMode(ESP_RUN_LED, OUTPUT);
   digitalWrite(ESP_RUN_LED, LOW);

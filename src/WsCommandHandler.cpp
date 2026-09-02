@@ -118,6 +118,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       Serial.printf("[CONFIG] Pair=0 Dual=%d Dist=%.2fm Endpoints=%s<->%s\n",
                     loopCfg[0].dualLoop, loopCfg[0].distance, id1, id2);
       sendSpeedPairConfig(num, 0);
+      PersistentConfig::saveLoopConfig(0, loopCfg[0]);
     }
   }
   else if (cmd.startsWith("CONFIG_SET|"))
@@ -147,6 +148,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       Serial.printf("[CONFIG] Pair=%u Dual=%d Dist=%.2fm Endpoints=%s<->%s\n",
                     idx, loopCfg[idx].dualLoop, loopCfg[idx].distance, id1, id2);
       sendSpeedPairConfig(num, idx);
+      PersistentConfig::saveLoopConfig(idx, loopCfg[idx]);
     }
   }
   else if (cmd.startsWith("SET_LC|"))
@@ -170,6 +172,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
           ldc.LDC1614_set_conversion_time(bus, ch, lc.conversion_time[ch]);
           ldc.LDC1614_set_driver_current(bus, ch, lc.driver_current[ch]);
           xSemaphoreGive(mtx);
+          PersistentConfig::saveSensorLC(s, lc);
           replyFunc(num, "LC_ACK");
         }
       }
@@ -198,6 +201,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       }
     }
     replyFunc(num, "THRESHOLD_ACK");
+    PersistentConfig::saveDetectorConfigs();
   }
   else if (cmd.startsWith("SET_EVENT_RANGE|"))
   {
@@ -220,6 +224,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
           det[s][ch].setConfig(cfg);
         }
       replyFunc(num, "EVENT_RANGE_ACK");
+      PersistentConfig::saveDetectorConfigs();
     }
   }
   else if (cmd.startsWith("SET_CLASSIFY|"))
@@ -269,6 +274,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
           det[s][ch].setConfig(cfg);
         }
       replyFunc(num, "CLASSIFY_ACK");
+      PersistentConfig::saveDetectorConfigs();
     }
   }
   else if (cmd.startsWith("SET_DETECTOR|"))
@@ -295,6 +301,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
         }
       }
       replyFunc(num, "DETECTOR_ACK");
+      PersistentConfig::saveDetectorConfigs();
     }
   }
   else if (cmd.startsWith("SET_AUTO_THRESH|"))
@@ -324,6 +331,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       }
 
       replyFunc(num, "AUTO_THRESH_ACK");
+      PersistentConfig::saveDetectorConfigs();
     }
   }
   else if (cmd.startsWith("GET_SPEED_CONFIG"))
@@ -443,6 +451,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       {
         replyFunc(num, "LOOP_GEOMETRY_ACK");
       }
+      PersistentConfig::saveLoopGeometry();
     }
     else
     {
@@ -468,6 +477,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       }
 
       replyFunc(num, "DEFAULT_KMH_ACK");
+      PersistentConfig::saveDetectorConfigs();
     }
   }
   else if (cmd.startsWith("RESET"))
@@ -525,6 +535,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     {
       g_report_cfg.enabled = ((int)p[0] != 0);
       replyFunc(num, g_report_cfg.enabled ? "REPORT_ENABLE_ACK|1" : "REPORT_ENABLE_ACK|0");
+      PersistentConfig::saveReportConfig();
     }
     else
     {
@@ -539,6 +550,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     {
       g_report_cfg.periodic_clear = ((int)p[0] != 0);
       replyFunc(num, g_report_cfg.periodic_clear ? "REPORT_CLEAR_ACK|1" : "REPORT_CLEAR_ACK|0");
+      PersistentConfig::saveReportConfig();
     }
     else
     {
@@ -584,6 +596,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              g_traffic_rules.min_straddle_overlap_ratio,
              g_traffic_rules.assume_speed_kmh);
     replyFunc(num, msg);
+    PersistentConfig::saveTrafficRules();
   }
   else if (cmd.startsWith("SET_ADJACENT|"))
   {
@@ -659,11 +672,11 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     snprintf(msg, sizeof(msg), "MQTT_ID|%s", mqttClientId);
     replyFunc(num, msg);
   }
-  else if (cmd.startsWith("SET_MQTT_SERVER|")) 
+  else if (cmd.startsWith("SET_MQTT_SERVER|"))
   {
     String server = cmd.substring(16);
     PersistentConfig::setMqttServer(server.c_str());
-    strncpy(mqttServer, server.c_str(), sizeof(mqttServer)-1);
+    strncpy(mqttServer, server.c_str(), sizeof(mqttServer) - 1);
     replyFunc(num, "MQTT_SERVER_ACK");
   }
 }
@@ -679,5 +692,4 @@ void webSocketEvent(uint8_t num, uint8_t type, uint8_t *payload, size_t len)
   cmd.trim();
 
   processSystemCommand(cmd, wsSendToClient, num);
-
 }
