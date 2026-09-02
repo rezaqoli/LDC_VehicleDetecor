@@ -9,6 +9,7 @@
 
 extern PubSubClient mqttClient;
 
+void mqttInit();
 void taskMqttLoop(void *);
 void mqttPublishEvent(const char* payload);
 void mqttCallback(char* topic, byte* payload, unsigned int length);

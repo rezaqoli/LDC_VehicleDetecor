@@ -1,6 +1,8 @@
 #include "LteModem.h"
 #include "WsUtils.h"
 
+char lte_apn[32] = "shatelmobile";
+
 TinyGsm modem(SerialAT);
 TinyGsmClient lteClient(modem);
 SemaphoreHandle_t modemMutex = nullptr;
@@ -159,8 +161,8 @@ void taskLTEInit(void *)
   Serial.printf(msg);
   wsSend(msg);
 
-  Serial.printf("[LTE] Connecting APN: %s\n", MODEM_APN);
-  lteGprsConnected = modem.gprsConnect(MODEM_APN, "", "");
+  Serial.printf("[LTE] Connecting APN: %s\n", lte_apn);
+  lteGprsConnected = modem.gprsConnect(lte_apn, "", "");
   Serial.println(lteGprsConnected ? "[LTE] Data connection active" : "[LTE] FATAL: Data connection failed");
   wsSend(lteGprsConnected ? "[LTE] Data connection active" : "[LTE] FATAL: Data connection failed");
 

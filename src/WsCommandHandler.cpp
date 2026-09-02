@@ -659,6 +659,13 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     snprintf(msg, sizeof(msg), "MQTT_ID|%s", mqttClientId);
     replyFunc(num, msg);
   }
+  else if (cmd.startsWith("SET_MQTT_SERVER|")) 
+  {
+    String server = cmd.substring(16);
+    PersistentConfig::setMqttServer(server.c_str());
+    strncpy(mqttServer, server.c_str(), sizeof(mqttServer)-1);
+    replyFunc(num, "MQTT_SERVER_ACK");
+  }
 }
 
 // ============================================================

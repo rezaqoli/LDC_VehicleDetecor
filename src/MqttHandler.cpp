@@ -3,18 +3,30 @@
 #include "LteModem.h"
 
 PubSubClient mqttClient(lteClient);
+char mqttClientId[32] = "ESP32_Vehicle_Detector";  // Default, overridden by NVS
+char mqttServer[64] = "iot.iolink.ir";  // Default
+IPAddress mqttServerIp = IPAddress(37, 255, 236, 124);  // Resolved IP address of MQTT server
+uint16_t mqttPort = 1883;  // Default port, can be overridden by NVS
+char mqttUser[32] = "";  // MQTT username, can be overridden by NVS
+char mqttPass[32] = "";  // MQTT password, can be overridden by NVS
+char mqttTopicEvents[64] = "vehicles/events";
+char mqttTopicCommands[64] = "vehicles/commands";
+char mqttTopicCommandResponses[64] = "vehicles/command_responses";
+
+
+
 
 static void mqttPublishEventInternal(const char *payload);
 static void mqttPublishResponseInternal(const char *payload);
 
 void mqttInit()
 {
-    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+    mqttClient.setServer(mqttServer, mqttPort);
     mqttClient.setCallback(mqttCallback2);
     mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60
     mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
     Serial.printf("[MQTT] Init: server=%s:%d client=%s keepalive=%d buf=%d\n",
-                  MQTT_SERVER, MQTT_PORT, mqttClientId,  // ← variable!
+                  mqttServer, mqttPort, mqttClientId,  // ← variable!
                   MQTT_KEEPALIVE, MQTT_MAX_PACKET_SIZE);
 }
 
@@ -103,13 +115,13 @@ bool mqttConnect()
         return true;
 
     Serial.println("\n[MQTT] ========================================");
-    Serial.printf("[MQTT] Attempting connection to: %s:%d\n", MQTT_SERVER, MQTT_PORT);
+    Serial.printf("[MQTT] Attempting connection to: %s:%d\n", mqttServer, mqttPort);
 
-    if (mqttClient.connect(mqttClientId, MQTT_USER, MQTT_PASS))
+    if (mqttClient.connect(mqttClientId, mqttUser, mqttPass))
     {
         Serial.println("[MQTT] SUCCESS: Connected to MQTT Broker!");
-        mqttClient.subscribe(MQTT_TOPIC_COMMANDS);
-        Serial.printf("[MQTT] Subscribed to: %s\n", MQTT_TOPIC_COMMANDS);
+        mqttClient.subscribe(mqttTopicCommands);
+        Serial.printf("[MQTT] Subscribed to: %s\n", mqttTopicCommands);
         Serial.println("[MQTT] ========================================\n");
         return true;
     }
@@ -159,7 +171,7 @@ static void mqttPublishEventInternal(const char *payload)
     }
     if (mqttClient.connected())
     {
-        bool ok = mqttPublishLocked(MQTT_TOPIC_EVENTS, payload);
+        bool ok = mqttPublishLocked(mqttTopicEvents, payload);
         if (ok)
         {
             Serial.printf("[MQTT] Published event (%d bytes)\n", strlen(payload));
@@ -197,7 +209,7 @@ static void mqttPublishResponseInternal(const char *payload)
 
     if (mqttClient.connected())
     {
-        bool ok = mqttPublishLocked(MQTT_TOPIC_COMMAND_RESPONSES, payload);
+        bool ok = mqttPublishLocked(mqttTopicCommandResponses, payload);
         if (ok)
             Serial.printf("[MQTT] Published response (%d bytes)\n", strlen(payload));
     }

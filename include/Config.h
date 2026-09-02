@@ -35,18 +35,18 @@
 #define MODEM_TX_PIN 17
 #define MODEM_RESET_PIN 8
 #define MODEM_BAUD_RATE 115200
-#define MODEM_APN "shatelmobile"
+extern char lte_apn[32];  // APN for LTE connection, can be overridden by NVS
 
 // MQTT Configuration
-#define MQTT_SERVER "iot.iolink.ir"//"192.168.100.32" // Or your private broker IP
-#define MQTT_PORT 1883
-//#define MQTT_CLIENT_ID "ESP32_Vehicle_Detector"
 extern char mqttClientId[32];   // Buffer for client ID, persisted in NVS
-#define MQTT_TOPIC_EVENTS "vehicles/events"
-#define MQTT_TOPIC_COMMANDS "vehicles/commands"
-#define MQTT_TOPIC_COMMAND_RESPONSES "vehicles/command_responses"
-#define MQTT_USER "" // Leave empty if no auth
-#define MQTT_PASS "" // Leave empty if no auth
+extern char mqttServer[64];     // Buffer for MQTT server address, persisted in NVS
+extern IPAddress mqttServerIp;  // Resolved IP address of MQTT server
+extern uint16_t mqttPort;  // Port for MQTT server, can be overridden by NVS
+extern char mqttUser[32];  // MQTT username, can be overridden by NVS
+extern char mqttPass[32];  // MQTT password, can be overridden by NVS
+extern char mqttTopicEvents[64];  // Topic for publishing events
+extern char mqttTopicCommands[64];  // Topic for receiving commands
+extern char mqttTopicCommandResponses[64];  // Topic for command responses
 
 // ============================================================
 // Timing & Sampling

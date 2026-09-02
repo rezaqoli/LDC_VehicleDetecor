@@ -86,8 +86,6 @@ WebSocketsServer webSocket(81);
 const char* WIFI_SSID = "Akhtarniroo";
 const char* WIFI_PASSWORD = "@esp8266!";
 
-char mqttClientId[32] = "ESP32_Vehicle_Detector";  // Default, overridden by NVS
-
 void wsSendToClient(uint8_t num, const char *msg)
 {
   if (msg)
@@ -195,12 +193,14 @@ void setup()
   Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
   Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
 
-  httpServer.on("/", []
+  httpServer.on("/dev", []
                 { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
   httpServer.begin();
   ESP2SOTA.begin(&httpServer);
   webSocket.begin();
   webSocket.onEvent(webSocketEvent);
+
+  mqttInit();
 
   rawQueue       = xQueueCreate(16, sizeof(RawFrame));
   eventQueue     = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
