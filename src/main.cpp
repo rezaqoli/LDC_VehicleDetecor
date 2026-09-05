@@ -112,6 +112,9 @@ void sendTrafficReport(const char *msg)
     return;
 
   wsBroadcast(msg);
+  #ifdef ENABLE_MQTT
+    mqttPublishEvent(msg);
+  #endif
 }
 
 void wsLoop()

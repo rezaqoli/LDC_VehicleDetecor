@@ -23,6 +23,7 @@
   #define LEDs7       36
   #define LEDs8       35
   extern const u8_t  LedSensors[8];
+  #define ENABLE_MQTT 1
 #else
   #ifdef ESP32
   #define SDA1        13

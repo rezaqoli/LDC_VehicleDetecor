@@ -3,6 +3,7 @@
 // ============================================================
 #include "VehicleDetector.h"
 #include "MqttHandler.h" // Include the new header
+#include "config.h"
 
 // ============================================================
 // Feature flag

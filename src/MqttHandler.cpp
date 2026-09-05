@@ -30,8 +30,8 @@ void mqttInit()
     mqttClient.setCallback(mqttCallback2);
     mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60
     mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);
-    Serial.printf("[MQTT] Init: server=%s:%d client=%s keepalive=%d buf=%d\n",
-                  mqttServer, mqttPort, mqttClientId,  // ← variable!
+    Serial.printf("[MQTT] Init: server=%s:%d, IP=%s, client=%s keepalive=%d buf=%d\n",
+                  mqttServer, mqttPort, mqttServerIp.toString().c_str(), mqttClientId,  // ← variable!
                   MQTT_KEEPALIVE, MQTT_MAX_PACKET_SIZE);
 }
 
@@ -237,33 +237,34 @@ void taskMqttLoop(void *)
     TickType_t wake = xTaskGetTickCount();
     while (true)
     {
-        vTaskDelayUntil(&wake, pdMS_TO_TICKS(10000)); // Check more frequently
-
-        if (!lteGprsConnected)
-        {
-            // If LTE is down, ensure MQTT is disconnected to save resources
-            if (mqttClient.connected())
+        vTaskDelayUntil(&wake, pdMS_TO_TICKS(5000)); // Check more frequently
+        #ifdef ENABLE_MQTT
+            if (!lteGprsConnected)
             {
-                if (takeModem(1000))
+                // If LTE is down, ensure MQTT is disconnected to save resources
+                if (mqttClient.connected())
                 {
-                    Serial.println("[MQTT] LTE down, disconnecting MQTT");
-                    mqttClient.disconnect();
-                    giveModem();
+                    if (takeModem(1000))
+                    {
+                        Serial.println("[MQTT] LTE down, disconnecting MQTT");
+                        mqttClient.disconnect();
+                        giveModem();
+                    }
                 }
+                continue;
             }
-            continue;
-        }
 
-        if (takeModem(2000))
-        {
-            if (!mqttClient.connected())
+            if (takeModem(2000))
             {
-                mqttConnect();
+                if (!mqttClient.connected())
+                {
+                    mqttConnect();
+                }
+                //mqttPublishEventInternal("[MQTT] Heartbeat: LTE is up and running");
+                //wsSend("[MQTT] Heartbeat: LTE is up and running");
+                mqttClient.loop();
+                giveModem();
             }
-            mqttPublishEventInternal("[MQTT] Heartbeat: LTE is up and running");
-            wsSend("[MQTT] Heartbeat: LTE is up and running");
-            mqttClient.loop();
-            giveModem();
-        }
+        #endif
     }
 }
