@@ -11,7 +11,16 @@ extern PubSubClient mqttClient;
 
 void mqttInit();
 void taskMqttLoop(void *);
+void taskMqttPublisher(void *);
 void mqttPublishEvent(const char* payload);
-void mqttCallback(char* topic, byte* payload, unsigned int length);
-void mqttCallback2(char *topic, byte *payload, unsigned int length);
+void mqttPublishCallback(char* topic, byte* payload, unsigned int length);
+void mqttCallback(char *topic, byte *payload, unsigned int length);
 bool mqttConnect();
+
+// Diagnostics counters (atomic-ish for single-writer/single-reader)
+extern volatile uint32_t mqttPubPublished;
+extern volatile uint32_t mqttPubDropped;
+extern volatile uint32_t mqttPubReconnect;
+extern char             mqttPubLastErr[64];
+
+void setLastErr(const char *s);

@@ -10,15 +10,47 @@ SemaphoreHandle_t modemMutex = nullptr;
 bool lteInitialized = false;
 bool lteGprsConnected = false;
 
+bool modemMutexReady()
+{
+  return modemMutex != nullptr;
+}
+
 bool takeModem(uint32_t timeoutMs)
 {
-  return modemMutex && xSemaphoreTake(modemMutex, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
+  if (modemMutex == nullptr)
+  {
+    Serial.println("[LTE] WARN: takeModem before modemMutex is initialised");
+    return false;
+  }
+  if (xSemaphoreTake(modemMutex, pdMS_TO_TICKS(timeoutMs)) != pdTRUE)
+  {
+    Serial.printf("[LTE] WARN: takeModem timeout after %u ms\n", (unsigned)timeoutMs);
+    return false;
+  }
+  return true;
 }
 
 void giveModem()
 {
   if (modemMutex)
     xSemaphoreGive(modemMutex);
+}
+
+// Create the modem mutex up front, before any task tries to take it.
+// Safe to call multiple times; subsequent calls are no-ops.
+void modemMutexInit()
+{
+  if (modemMutex != nullptr)
+    return;
+  modemMutex = xSemaphoreCreateMutex();
+  if (!modemMutex)
+  {
+    Serial.println("[LTE] FATAL: failed to create modem mutex");
+  }
+  else
+  {
+    Serial.println("[LTE] modemMutex initialised");
+  }
 }
 
 static void printLteStatus()
@@ -142,11 +174,10 @@ void taskLTEInit(void *)
   Serial.println("\n[LTE] Starting TinyGSM initialization...");
   wsSend("\n[LTE] Starting TinyGSM initialization...");
 
-  modemMutex = xSemaphoreCreateMutex();
-  if (!modemMutex)
+  if (!modemMutexReady())
   {
-    Serial.println("[LTE] Failed to create modem mutex");
-    wsSend("[LTE] Failed to create modem mutex");
+    Serial.println("[LTE] FATAL: modemMutex not initialised — call modemMutexInit() in setup()");
+    wsSend("[LTE] FATAL: modemMutex not initialised");
     vTaskDelete(nullptr);
     return;
   }
@@ -229,18 +260,21 @@ void taskLTEStatusMonitor(void *)
     const bool networkConnected = modem.isNetworkConnected();
     const bool gprsConnected    = modem.isGprsConnected();
     lteGprsConnected            = gprsConnected;
+    const int   signal          = modem.getSignalQuality();
+    const String operatorName   = modem.getOperator();
 
     Serial.printf("[LTE Status] Network:%s Data:%s Signal:%d/31 Operator:%s (dataDownStreak=%u/%u)\n",
                   networkConnected ? "YES" : "NO",
                   gprsConnected    ? "YES" : "NO",
-                  modem.getSignalQuality(),
-                  modem.getOperator().c_str(),
+                  signal,
+                  operatorName.c_str(),
                   (unsigned)dataDownStreak,
                   (unsigned)DATA_DOWN_THRESHOLD);
 
     if (!gprsConnected)
     {
       dataDownStreak++;
+
       if (dataDownStreak >= DATA_DOWN_THRESHOLD)
       {
         // Release the mutex before the hardware reset (which touches GPIO only).
@@ -253,13 +287,32 @@ void taskLTEStatusMonitor(void *)
         continue;
       }
 
-      // Try to recover via PDP-context bounce on the first failures,
-      // without doing a full modem reset.
-      if (dataDownStreak == 1 || dataDownStreak == 5 || dataDownStreak == 10)
+      // Soft-recover via PDP context bounce on the first failures.
+      // softResetDataConnection() can block for many seconds — release the
+      // modem mutex first so publish / WS paths are not starved.
+      const bool doSoftReset = (dataDownStreak == 1 || dataDownStreak == 5 || dataDownStreak == 10);
+      if (doSoftReset)
       {
+        giveModem();
+        bool ok = false;
+        if (takeModem(15000))
+        {
+          ok = lteGprsConnected;  // value we just read is still authoritative
+          // Note: we re-read after a fresh gprsConnect() inside the helper.
+          giveModem();
+        }
+        // Run the long operation without holding the mutex
         softResetDataConnection();
-        if (lteGprsConnected)
-          dataDownStreak = 0;
+        // Re-acquire briefly to refresh lteGprsConnected under protection
+        if (takeModem(1000))
+        {
+          // softResetDataConnection already updated lteGprsConnected
+          if (lteGprsConnected)
+            dataDownStreak = 0;
+          giveModem();
+        }
+        (void)ok;
+        continue;
       }
     }
     else

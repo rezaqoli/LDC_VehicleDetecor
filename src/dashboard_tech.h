@@ -161,6 +161,20 @@ th { background: #eef3f8; }
   <button onclick="el('eventLog').innerHTML='[System] Cleared'">Clear</button>
 </div>
 
+<div class="card" style="border-left: 4px solid #20c997;">
+  <h2>📡 MQTT Publish Stats</h2>
+  <div class="row">
+    <span class="kv">Published: <b id="mp_published">0</b></span>
+    <span class="kv">Dropped: <b id="mp_dropped">0</b></span>
+    <span class="kv">Reconnect: <b id="mp_reconnect">0</b></span>
+    <span class="kv">Last err: <b id="mp_err">none</b></span>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <button onclick="sendCmd('GET_MQTT_PUB_STATS')">Refresh</button>
+    <button onclick="sendCmd('RESET_MQTT_PUB_STATS')">Reset Counters</button>
+  </div>
+</div>
+
 <script>
 let ws;
 const IP = window.location.hostname;
@@ -207,6 +221,16 @@ function refreshAll(){
   sendCmd('GET_DEFAULT_KMH');
   sendCmd('GET_LOOP_GEOMETRY');
   sendCmd('GET_CPU');
+  sendCmd('GET_MQTT_PUB_STATS');
+}
+
+function parseKv(payload, sep) {
+  const vals = {};
+  payload.split(sep).forEach(kv => {
+    const x = kv.split(':');
+    if (x.length === 2) vals[x[0]] = x[1];
+  });
+  return vals;
 }
 
 // Build LC table (8 rows: S0C0..S0C3, S1C0..S1C3)
@@ -402,6 +426,18 @@ function handleMessage(d){
     el('cpu1').innerText = p[2] || '0';
   } else if (d.startsWith('SAVE_ALL_ACK')) {
     log('💾 Saved all configs to NVS');
+  } else if (d.startsWith('MQTT_PUB_STATS|')) {
+    const v = parseKv(d.substring(15), '|');
+    if (v.published !== undefined) el('mp_published').innerText = v.published;
+    if (v.dropped   !== undefined) el('mp_dropped').innerText   = v.dropped;
+    if (v.reconnect !== undefined) el('mp_reconnect').innerText = v.reconnect;
+    if (v.last_err  !== undefined) el('mp_err').innerText      = v.last_err;
+  } else if (d.startsWith('MQTT_PUB_STATS_RESET_ACK')) {
+    log('🧮 MQTT pub stats reset');
+    el('mp_published').innerText = '0';
+    el('mp_dropped').innerText   = '0';
+    el('mp_reconnect').innerText = '0';
+    el('mp_err').innerText       = 'none';
   } else {
     log('[Msg] ' + d);
   }

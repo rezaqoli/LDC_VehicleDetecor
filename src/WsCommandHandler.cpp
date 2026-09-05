@@ -9,6 +9,8 @@
 #include "PersistentConfig.h"
 #include "MqttHandler.h"
 #include "LteModem.h"
+#include "MqttHandler.h"
+#include "LteModem.h"
 #include "cstring"
 
 namespace
@@ -850,6 +852,25 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
   {
     bool ok = PersistentConfig::saveAllConfigs();
     replyFunc(num, ok ? "SAVE_ALL_ACK|ok" : "SAVE_ALL_ACK|partial_failure");
+  }
+  else if (cmd == "GET_MQTT_PUB_STATS")
+  {
+    char msg[192];
+    snprintf(msg, sizeof(msg),
+             "MQTT_PUB_STATS|published:%lu|dropped:%lu|reconnect:%lu|last_err:%s",
+             (unsigned long)mqttPubPublished,
+             (unsigned long)mqttPubDropped,
+             (unsigned long)mqttPubReconnect,
+             mqttPubLastErr);
+    replyFunc(num, msg);
+  }
+  else if (cmd == "RESET_MQTT_PUB_STATS")
+  {
+    mqttPubPublished = 0;
+    mqttPubDropped = 0;
+    mqttPubReconnect = 0;
+    setLastErr("reset");
+    replyFunc(num, "MQTT_PUB_STATS_RESET_ACK");
   }
 }
 

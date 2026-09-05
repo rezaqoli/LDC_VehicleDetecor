@@ -14,7 +14,8 @@ extern bool lteGprsConnected;
 
 bool takeModem(uint32_t timeoutMs);
 void giveModem();
-
+bool modemMutexReady();
+void modemMutexInit();
 
 void taskLTEInit(void *);
 void taskLTEStatusMonitor(void *);
