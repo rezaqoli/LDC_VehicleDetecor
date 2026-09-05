@@ -9,6 +9,8 @@
 #include "PersistentConfig.h"
 #include "MqttHandler.h"
 #include "LteModem.h"
+#include "PowerMonitor.h"
+#include "TimeManager.h"
 #include "MqttHandler.h"
 #include "LteModem.h"
 #include "cstring"
@@ -871,6 +873,31 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     mqttPubReconnect = 0;
     setLastErr("reset");
     replyFunc(num, "MQTT_PUB_STATS_RESET_ACK");
+  }
+  else if (cmd == "GET_POWER")
+  {
+    const PowerReadings &p = powerMonitorGet();
+    uint32_t age_s = p.valid ? ((millis() - p.sampled_at_ms) / 1000UL) : 0;
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "POWER|bat:%.2f|sol:%.2f|low:%d|valid:%d|age_s:%lu",
+             p.battery_v, p.solar_v, p.battery_low ? 1 : 0,
+             p.valid ? 1 : 0, (unsigned long)age_s);
+    replyFunc(num, msg);
+  }
+  else if (cmd == "GET_TIME")
+  {
+    char iso[40] = "";
+    if (isTimeSynced()) formatIsoTime(iso, sizeof(iso), 0);
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "TIME|synced:%d|epoch:%lu|iso:%s|last_sync:%lu|uptime_ms:%lu",
+             isTimeSynced() ? 1 : 0,
+             (unsigned long)getEpochTime(),
+             iso,
+             (unsigned long)getLastSyncTime(),
+             (unsigned long)millis());
+    replyFunc(num, msg);
   }
 }
 

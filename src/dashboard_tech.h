@@ -175,6 +175,35 @@ th { background: #eef3f8; }
   </div>
 </div>
 
+<div class="card" style="border-left: 4px solid #ffc107;">
+  <h2>🔋 Power Monitor</h2>
+  <div class="row">
+    <span class="kv">Battery: <b id="pm_bat">-</b> V</span>
+    <span class="kv">Solar: <b id="pm_sol">-</b> V</span>
+    <span class="kv">State: <b id="pm_state">-</b></span>
+    <span class="kv">Age: <b id="pm_age">-</b> s</span>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <button onclick="sendCmd('GET_POWER')">Refresh</button>
+    <button onclick="startPowerAuto()">Auto-refresh (2s)</button>
+    <button onclick="stopPowerAuto()">Stop</button>
+  </div>
+  <p class="small" id="pm_warn" style="color:#dc3545; display:none; margin-top:6px; font-weight:bold;">⚠ Battery voltage is below 9 V — warning published via MQTT.</p>
+</div>
+
+<div class="card" style="border-left: 4px solid #0d6efd;">
+  <h2>🕒 Time Sync</h2>
+  <div class="row">
+    <span class="kv">Synced: <b id="tm_synced">no</b></span>
+    <span class="kv">ISO: <b id="tm_iso">-</b></span>
+    <span class="kv">Epoch: <b id="tm_epoch">-</b></span>
+    <span class="kv">Last sync: <b id="tm_last">-</b></span>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <button onclick="sendCmd('GET_TIME')">Refresh</button>
+  </div>
+</div>
+
 <script>
 let ws;
 const IP = window.location.hostname;
@@ -222,6 +251,8 @@ function refreshAll(){
   sendCmd('GET_LOOP_GEOMETRY');
   sendCmd('GET_CPU');
   sendCmd('GET_MQTT_PUB_STATS');
+  sendCmd('GET_POWER');
+  sendCmd('GET_TIME');
 }
 
 function parseKv(payload, sep) {
@@ -438,14 +469,50 @@ function handleMessage(d){
     el('mp_dropped').innerText   = '0';
     el('mp_reconnect').innerText = '0';
     el('mp_err').innerText       = 'none';
+  } else if (d.startsWith('POWER|') || d.startsWith('BATTERY_LOW|') || d.startsWith('BATTERY_OK|')) {
+    if (d.startsWith('BATTERY_LOW|') || d.startsWith('BATTERY_OK|')) log(d);
+    sendCmd('GET_POWER');
+  } else if (d.startsWith('POWER|')) {
+    const v = parseKv(d.substring(6), '|');
+    if (v.bat  !== undefined) el('pm_bat').innerText  = v.bat;
+    if (v.sol  !== undefined) el('pm_sol').innerText  = v.sol;
+    if (v.age_s !== undefined) el('pm_age').innerText = v.age_s;
+    if (v.low !== undefined) {
+      const low = (v.low === '1');
+      el('pm_state').innerText = low ? 'LOW' : 'OK';
+      el('pm_state').style.color = low ? '#dc3545' : '#198754';
+      el('pm_warn').style.display = low ? 'block' : 'none';
+    }
+  } else if (d.startsWith('TIME|')) {
+    const v = parseKv(d.substring(5), '|');
+    if (v.synced !== undefined) el('tm_synced').innerText = (v.synced === '1') ? 'yes' : 'no';
+    if (v.iso    !== undefined) el('tm_iso').innerText    = v.iso || '-';
+    if (v.epoch  !== undefined) el('tm_epoch').innerText  = v.epoch;
+    if (v.last_sync !== undefined) el('tm_last').innerText = v.last_sync;
   } else {
     log('[Msg] ' + d);
   }
 }
 
+// Periodic auto-refresh of power and time
+let _powerAutoTimer = null;
+function startPowerAuto() {
+  if (_powerAutoTimer) return;
+  sendCmd('GET_POWER');
+  sendCmd('GET_TIME');
+  _powerAutoTimer = setInterval(() => {
+    sendCmd('GET_POWER');
+    sendCmd('GET_TIME');
+  }, 2000);
+}
+function stopPowerAuto() {
+  if (_powerAutoTimer) { clearInterval(_powerAutoTimer); _powerAutoTimer = null; }
+}
+
 buildLcTable();
 buildLpTable();
 connect();
+startPowerAuto();
 </script>
 </body>
 </html>

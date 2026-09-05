@@ -26,6 +26,8 @@
 #include "MqttHandler.h"
 #include "TrafficStats.h"
 #include "LoopGeometry.h"
+#include "PowerMonitor.h"
+#include "TimeManager.h"
 // ============================================================
 // Global Object Definitions
 // ============================================================
@@ -245,6 +247,8 @@ void setup()
   trafficStatsSetReportSender(sendTrafficReport);
   g_loopGeometry.loadDefaults();
 
+  powerMonitorInit();
+
   if (!rawQueue || !eventQueue || !freeEventQueue || !wsTxQueue || !freeWsMsgQueue || !i2c0Mutex || !i2c1Mutex || !wsMutex || !dataMutex)
   {
     Serial.println("[ERR] Failed to create queue/semaphore");
@@ -274,10 +278,12 @@ void setup()
       xTaskCreatePinnedToCore(taskWsLoop,                   "WS", 12288, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSpeedMatch,           "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 1, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 6, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 5, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS 
+      xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS
       )
   {
     Serial.println("[ERR] Failed to create task");

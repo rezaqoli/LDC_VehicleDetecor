@@ -59,6 +59,25 @@ extern char mqttTopicCommands[64];  // Topic for receiving commands
 extern char mqttTopicCommandResponses[64];  // Topic for command responses
 
 // ============================================================
+// Battery / Solar voltage sense (ESP32-S3 ADC1)
+// ============================================================
+#define BATTERY_PIN        1   // ADC1_CH0
+#define SOLAR_PIN          2   // ADC1_CH1
+#define VOLTAGE_DIVIDER_R1 100000.0f
+#define VOLTAGE_DIVIDER_R2 100000.0f
+#define BATTERY_LOW_V      9.0f
+#define BATTERY_OK_V       9.5f
+#define POWER_SAMPLE_AVG   32
+#define POWER_PERIOD_MS    60000UL
+
+// ============================================================
+// Time sync
+// ============================================================
+#define TIME_TZ              "IRST-3:30"   // POSIX TZ string for localtime()
+#define TIME_SYNC_PERIOD_MS  600000UL      // 10 minutes
+#define TIME_SYNC_INITIAL_MS 30000UL       // wait for LTE to come up
+
+// ============================================================
 // Timing & Sampling
 // ============================================================
 static const int SAMPLING_MS = 5; // 200 Hz sampling rate

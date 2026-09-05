@@ -9,3 +9,5 @@ void taskSpeedMatch(void *);
 void taskWebServer(void *);
 void taskWsLoop(void *);
 void taskStatsReporter(void *);
+void taskPowerMonitor(void *);
+void taskTimeSync(void *);

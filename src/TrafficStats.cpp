@@ -1,6 +1,7 @@
 #include "TrafficStats.h"
 #include "esp_timer.h"
 #include <cstring>
+#include <ctime>
 
 SemaphoreHandle_t statsMutex = nullptr;
 TrafficStatistics g_traffic_stats;
@@ -199,6 +200,23 @@ String trafficStatsBuildReport(bool clear_after)
     out.reserve(1800);
 
     out += "TRAFFIC_REPORT";
+
+    // Optional ISO timestamp prefix if system time is synced.
+    {
+        char tsBuf[40] = "";
+        // Avoid pulling the full TimeManager API here — use settimeofday
+        // already applied by taskTimeSync, and only need a quick localtime.
+        time_t now = time(nullptr);
+        if (now > 1609459200)
+        {
+            struct tm ti;
+            localtime_r(&now, &ti);
+            strftime(tsBuf, sizeof(tsBuf), "%Y-%m-%dT%H:%M:%S%z", &ti);
+            out += "|ts:";
+            out += tsBuf;
+        }
+    }
+
     out += "|dur_s:";
     out += String(dur_s);
     out += "|total:";
