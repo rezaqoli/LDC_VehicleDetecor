@@ -102,6 +102,41 @@ static bool initEc200u()
   return true;
 }
 
+// ============================================================
+// Hardware reset of the LTE modem (toggle MODEM_RESET_PIN)
+// Caller must NOT hold modemMutex.
+// ============================================================
+static void hardwareResetModem()
+{
+  Serial.println("[LTE] Hardware-resetting modem (MODEM_RESET_PIN)...");
+  wsSend("[LTE] Hardware-resetting modem (MODEM_RESET_PIN)...");
+  digitalWrite(MODEM_RESET_PIN, LOW);
+  delay(300);
+  digitalWrite(MODEM_RESET_PIN, HIGH);
+  delay(3000);
+  lteInitialized = false;
+  lteGprsConnected = false;
+}
+
+// ============================================================
+// Soft reset: drop PDP context + re-register on the network.
+// Caller MUST hold modemMutex.
+// ============================================================
+static void softResetDataConnection()
+{
+  Serial.println("[LTE] Resetting data connection...");
+  wsSend("[LTE] Resetting data connection...");
+  // Bring the PDP context down and back up. Falls back to hardware reset on
+  // repeated failure (handled in the status monitor via the counter).
+  modem.gprsDisconnect();
+  delay(500);
+  lteGprsConnected = modem.gprsConnect(lte_apn, "", "");
+  Serial.println(lteGprsConnected ? "[LTE] Data connection re-established"
+                                   : "[LTE] Data connection still DOWN");
+  wsSend(lteGprsConnected ? "[LTE] Data connection re-established"
+                           : "[LTE] Data connection still DOWN");
+}
+
 void taskLTEInit(void *)
 {
   Serial.println("\n[LTE] Starting TinyGSM initialization...");
@@ -173,22 +208,65 @@ void taskLTEInit(void *)
 void taskLTEStatusMonitor(void *)
 {
   TickType_t wake = xTaskGetTickCount();
+
+  // Number of consecutive status ticks (one per minute) where data has been
+  // disabled. When this hits the threshold, the modem is hardware-reset.
+  static const uint8_t DATA_DOWN_THRESHOLD = 20; // 20 ticks * 60s = 20 min
+  uint8_t dataDownStreak = 0;
+
   while (true)
   {
     vTaskDelayUntil(&wake, pdMS_TO_TICKS(60000));
 
-    if (!lteInitialized || !takeModem(1000))
+    if (!lteInitialized)
+    {
+      dataDownStreak = 0;
+      continue;
+    }
+    if (!takeModem(1000))
       continue;
 
     const bool networkConnected = modem.isNetworkConnected();
-    const bool gprsConnected = modem.isGprsConnected();
-    lteGprsConnected = gprsConnected;
+    const bool gprsConnected    = modem.isGprsConnected();
+    lteGprsConnected            = gprsConnected;
 
-    Serial.printf("[LTE Status] Network:%s Data:%s Signal:%d/31 Operator:%s\n",
+    Serial.printf("[LTE Status] Network:%s Data:%s Signal:%d/31 Operator:%s (dataDownStreak=%u/%u)\n",
                   networkConnected ? "YES" : "NO",
-                  gprsConnected ? "YES" : "NO",
+                  gprsConnected    ? "YES" : "NO",
                   modem.getSignalQuality(),
-                  modem.getOperator().c_str());
+                  modem.getOperator().c_str(),
+                  (unsigned)dataDownStreak,
+                  (unsigned)DATA_DOWN_THRESHOLD);
+
+    if (!gprsConnected)
+    {
+      dataDownStreak++;
+      if (dataDownStreak >= DATA_DOWN_THRESHOLD)
+      {
+        // Release the mutex before the hardware reset (which touches GPIO only).
+        giveModem();
+        Serial.printf("[LTE] Data has been DOWN for %u minutes — resetting modem.\n",
+                      (unsigned)dataDownStreak);
+        wsSend("[LTE] Data has been DOWN for 20 minutes — resetting modem.");
+        hardwareResetModem();
+        dataDownStreak = 0;
+        continue;
+      }
+
+      // Try to recover via PDP-context bounce on the first failures,
+      // without doing a full modem reset.
+      if (dataDownStreak == 1 || dataDownStreak == 5 || dataDownStreak == 10)
+      {
+        softResetDataConnection();
+        if (lteGprsConnected)
+          dataDownStreak = 0;
+      }
+    }
+    else
+    {
+      // Healthy: clear the streak counter.
+      dataDownStreak = 0;
+    }
 
     giveModem();
   }
