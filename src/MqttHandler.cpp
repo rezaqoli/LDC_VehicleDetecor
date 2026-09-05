@@ -1,12 +1,14 @@
 #include "MqttHandler.h"
 #include "WsCommandHandler.h" // To reuse command parsing logic if desired
 #include "LteModem.h"
+#include <cstring>
+
 
 PubSubClient mqttClient(lteClient);
 char mqttClientId[32] = "ESP32_Vehicle_Detector";  // Default, overridden by NVS
-char mqttServer[64] = "iot.iolink.ir";  // Default
+char mqttServer[64] = "\0";//"iot.iolink.ir";  // Default
 IPAddress mqttServerIp = IPAddress(37, 255, 236, 124);  // Resolved IP address of MQTT server
-uint16_t mqttPort = 1883;  // Default port, can be overridden by NVS
+uint16_t mqttPort = 1010;  // Default port, can be overridden by NVS
 char mqttUser[32] = "";  // MQTT username, can be overridden by NVS
 char mqttPass[32] = "";  // MQTT password, can be overridden by NVS
 char mqttTopicEvents[64] = "vehicles/events";
@@ -21,7 +23,10 @@ static void mqttPublishResponseInternal(const char *payload);
 
 void mqttInit()
 {
-    mqttClient.setServer(mqttServer, mqttPort);
+    if(strlen(mqttServer) < 3 )
+        mqttClient.setServer(mqttServerIp, mqttPort);
+    else
+        mqttClient.setServer(mqttServer, mqttPort);
     mqttClient.setCallback(mqttCallback2);
     mqttClient.setSocketTimeout(60); // Default is usually 15, try 30 or 60
     mqttClient.setBufferSize(MQTT_MAX_PACKET_SIZE);

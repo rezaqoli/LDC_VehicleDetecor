@@ -9,6 +9,7 @@
 #include "PersistentConfig.h"
 #include "MqttHandler.h"
 #include "LteModem.h"
+#include "cstring"
 
 namespace
 {
@@ -679,6 +680,10 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     String server = cmd.substring(16);
     PersistentConfig::setMqttServer(server.c_str());
     strncpy(mqttServer, server.c_str(), sizeof(mqttServer) - 1);
+    if (strlen(mqttServer) < 3)
+      mqttClient.setServer(mqttServerIp, mqttPort);
+    else
+      mqttClient.setServer(mqttServer, mqttPort);
     replyFunc(num, "MQTT_SERVER_ACK");
   }
   else if (cmd.startsWith("SET_MQTT_FULL|"))
@@ -688,21 +693,28 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     String parts[10];
     int idx = 0;
     int start = 0;
-    for (int i = 0; i < (int)rest.length() && idx < 10; i++) {
-      if (rest.charAt(i) == '|') { parts[idx++] = rest.substring(start, i); start = i + 1; }
+    for (int i = 0; i < (int)rest.length() && idx < 10; i++)
+    {
+      if (rest.charAt(i) == '|')
+      {
+        parts[idx++] = rest.substring(start, i);
+        start = i + 1;
+      }
     }
-    if (idx < 10) parts[idx++] = rest.substring(start);
-    if (idx >= 7) {
-      const char *id_p   = parts[0].c_str();
-      const char *srv_p  = parts[1].c_str();
-      uint16_t port      = (uint16_t)atoi(parts[2].c_str());
-      const char *ip_p   = parts[3].c_str();
-      const char *usr_p  = parts[4].c_str();
-      const char *pas_p  = parts[5].c_str();
-      const char *apn_p  = parts[6].c_str();
-      const char *tEvt   = (idx >= 7) ? parts[7].c_str() : "";
-      const char *tCmd   = (idx >= 8) ? parts[8].c_str() : "";
-      const char *tResp  = (idx >= 9) ? parts[9].c_str() : "";
+    if (idx < 10)
+      parts[idx++] = rest.substring(start);
+    if (idx >= 7)
+    {
+      const char *id_p = parts[0].c_str();
+      const char *srv_p = parts[1].c_str();
+      uint16_t port = (uint16_t)atoi(parts[2].c_str());
+      const char *ip_p = parts[3].c_str();
+      const char *usr_p = parts[4].c_str();
+      const char *pas_p = parts[5].c_str();
+      const char *apn_p = parts[6].c_str();
+      const char *tEvt = (idx >= 7) ? parts[7].c_str() : "";
+      const char *tCmd = (idx >= 8) ? parts[8].c_str() : "";
+      const char *tResp = (idx >= 9) ? parts[9].c_str() : "";
 
       PersistentConfig::setMqttClientId(id_p);
       PersistentConfig::setMqttServer(srv_p);
@@ -710,30 +722,40 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       PersistentConfig::setInt("mqtt_port", (int32_t)port);
 
       IPAddress ip;
-      if (ip.fromString(ip_p)) {
+      if (ip.fromString(ip_p))
+      {
         PersistentConfig::setUint("ip_server", (uint32_t)ip);
         mqttServerIp = ip;
       }
 
       PersistentConfig::setString("mqtt_user", usr_p);
       PersistentConfig::setString("mqtt_pass", pas_p);
-      PersistentConfig::setString("lte_apn",   apn_p);
-      PersistentConfig::setString("mqtt_topic_events",            tEvt);
-      PersistentConfig::setString("mqtt_topic_commands",          tCmd);
-      PersistentConfig::setString("mqtt_topic_command_responses", tResp);
+      PersistentConfig::setString("lte_apn", apn_p);
+      PersistentConfig::setString("events", tEvt);
+      PersistentConfig::setString("commands", tCmd);
+      PersistentConfig::setString("cmnds_resp", tResp);
 
       // update runtime mirrors
-      strncpy(mqttClientId, id_p, sizeof(mqttClientId) - 1); mqttClientId[sizeof(mqttClientId) - 1] = '\0';
-      strncpy(mqttServer,   srv_p, sizeof(mqttServer)   - 1); mqttServer[sizeof(mqttServer)   - 1] = '\0';
+      strncpy(mqttClientId, id_p, sizeof(mqttClientId) - 1);
+      mqttClientId[sizeof(mqttClientId) - 1] = '\0';
+      strncpy(mqttServer, srv_p, sizeof(mqttServer) - 1);
+      mqttServer[sizeof(mqttServer) - 1] = '\0';
       mqttPort = port;
-      strncpy(mqttUser, usr_p, sizeof(mqttUser) - 1); mqttUser[sizeof(mqttUser) - 1] = '\0';
-      strncpy(mqttPass, pas_p, sizeof(mqttPass) - 1); mqttPass[sizeof(mqttPass) - 1] = '\0';
+      strncpy(mqttUser, usr_p, sizeof(mqttUser) - 1);
+      mqttUser[sizeof(mqttUser) - 1] = '\0';
+      strncpy(mqttPass, pas_p, sizeof(mqttPass) - 1);
+      mqttPass[sizeof(mqttPass) - 1] = '\0';
 
       // Reconfigure MQTT client
-      mqttClient.setServer(mqttServer, mqttPort);
+      if (strlen(mqttServer) < 3)
+        mqttClient.setServer(mqttServerIp, mqttPort);
+      else
+        mqttClient.setServer(mqttServer, mqttPort);
 
       replyFunc(num, "MQTT_CFG_FULL_ACK|saved|restart_recommended");
-    } else {
+    }
+    else
+    {
       replyFunc(num, "ERROR|Invalid_mqtt_full_payload");
     }
   }
@@ -741,11 +763,11 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
   {
     char msg[512];
     snprintf(msg, sizeof(msg),
-      "MQTT_CFG|%s|%s|%u|%s|%s|%s|%s|%s|%s|%s",
-      mqttClientId, mqttServer, (unsigned)mqttPort,
-      mqttServerIp.toString().c_str(),
-      mqttUser, mqttPass,
-      lte_apn, mqttTopicEvents, mqttTopicCommands, mqttTopicCommandResponses);
+             "MQTT_CFG|%s|%s|%u|%s|%s|%s|%s|%s|%s|%s",
+             mqttClientId, mqttServer, (unsigned)mqttPort,
+             mqttServerIp.toString().c_str(),
+             mqttUser, mqttPass,
+             lte_apn, mqttTopicEvents, mqttTopicCommands, mqttTopicCommandResponses);
     replyFunc(num, msg);
   }
   else if (cmd == "GET_MQTT_SERVER")
@@ -769,18 +791,22 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     char msg[768];
     int pos = 0;
     pos += snprintf(msg + pos, sizeof(msg) - pos, "SENSOR_LC");
-    for (int s = 0; s < 2; s++) {
+    for (int s = 0; s < 2; s++)
+    {
       const ChannelLC &lc = (s == 0) ? sensor1LC : sensor2LC;
-      for (int ch = 0; ch < 4; ch++) {
+      for (int ch = 0; ch < 4; ch++)
+      {
         pos += snprintf(msg + pos, sizeof(msg) - pos,
                         "|s%dc%d:%.3f|%.3f|%u|%u",
                         s, ch,
                         lc.L[ch], lc.C[ch],
                         (unsigned)lc.conversion_time[ch],
                         (unsigned)lc.driver_current[ch]);
-        if (pos >= (int)sizeof(msg) - 64) break;
+        if (pos >= (int)sizeof(msg) - 64)
+          break;
       }
-      if (pos >= (int)sizeof(msg) - 64) break;
+      if (pos >= (int)sizeof(msg) - 64)
+        break;
     }
     replyFunc(num, msg);
   }

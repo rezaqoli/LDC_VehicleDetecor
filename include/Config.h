@@ -9,11 +9,20 @@
 // ============================================================
 // Hardware Pin Definitions
 // ============================================================
-#define SDA1        9
-#define SCL1        10
-#define SDA2        12
-#define SCL2        13
-#define ESP_RUN_LED 21
+  #define SDA1        9
+  #define SCL1        10
+  #define SDA2        12
+  #define SCL2        13
+  #define ESP_RUN_LED 21
+  #define LEDs1       42
+  #define LEDs2       41
+  #define LEDs3       40
+  #define LEDs4       39
+  #define LEDs5       38
+  #define LEDs6       37
+  #define LEDs7       36
+  #define LEDs8       35
+  extern const u8_t  LedSensors[8];
 #else
   #ifdef ESP32
   #define SDA1        13

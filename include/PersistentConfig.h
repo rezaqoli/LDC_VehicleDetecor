@@ -18,6 +18,8 @@ class PersistentConfig
         static bool getInt(const char* key, int32_t* out, int32_t defaultVal);
         static bool setInt(const char* key, int32_t value);
         static bool setUint(const char* key, uint32_t value);
+        static bool getUint(const char *key, uint32_t *out, uint32_t defaultVal);
+
         // MQTT-specific helpers
         static bool getMqttClientId(char* out, size_t maxLen);
         static bool setMqttClientId(const char* id);

@@ -8,6 +8,7 @@
 #include "TrafficStats.h"
 #include "TrafficMonitor.h"
 
+const u8_t LedSensors[8] = {LEDs1, LEDs2, LEDs3, LEDs4, LEDs5, LEDs6, LEDs7, LEDs8 };
 // ============================================================
 // Internal helpers (file-scoped)
 // ============================================================
@@ -81,6 +82,17 @@ void taskSensorReading(void *)
   }
 }
 
+void ledBlink(u8_t pin, uint32_t interval_ms)
+{
+  static uint32_t last_toggle_ms[8] = {0,0,0,0,0,0,0,0};
+  uint32_t now = esp_timer_get_time() / 1000; // Convert to milliseconds
+  if (now - last_toggle_ms[pin] >= interval_ms)
+  {
+    digitalWrite(LedSensors[pin], !digitalRead(LedSensors[pin]));
+    last_toggle_ms[pin] = now;
+  }
+}
+
 // ============================================================
 // Task: Detector (core 0, 12288 stack)
 // ============================================================
@@ -88,6 +100,8 @@ void taskDetector(void *)
 {
   RawFrame frame;
   static EventResult ev;
+  static uint32_t ledOffTime[8] = {0,0,0,0,0,0,0,0};
+  static bool ledActive[8] = {0,0,0,0,0,0,0,0};
 
   for (int s = 0; s < 2; s++)
     for (int ch = 0; ch < 4; ch++)
@@ -125,6 +139,9 @@ void taskDetector(void *)
             {
               reportEvent(ev, wsSend);
               trafficMonitorOnSingleEvent(ev);
+              ledOffTime[s*4 + ch] = esp_timer_get_time() / 1000 + 500; // Convert to milliseconds + 500ms blink
+              digitalWrite(LedSensors[s*4 + ch], HIGH);
+              ledActive[s*4 + ch ] = true;
             }
           }
         }
@@ -154,13 +171,23 @@ void taskDetector(void *)
     }
 
     // LED blink (2s toggle)
-    static uint64_t last_toggle_us = 0;
-    uint64_t now = esp_timer_get_time();
-    if (now - last_toggle_us >= 2000000ULL)
+    static uint32_t last_toggle_us = 0;
+    uint32_t now = esp_timer_get_time() / 1000;
+    if (now - last_toggle_us >= 2000)
     {
       digitalWrite(ESP_RUN_LED, !digitalRead(ESP_RUN_LED));
       last_toggle_us = now;
     }
+
+    for(u8_t i = 0 ; i<8 ; i++)
+    {
+      if(ledActive[i] & now >= ledOffTime[i])
+      {
+        digitalWrite(LedSensors[i] , LOW);
+        ledActive[i] = false;
+      }
+    }
+    
 
     vTaskDelay(pdMS_TO_TICKS(10));
   }

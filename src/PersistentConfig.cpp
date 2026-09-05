@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+extern IPAddress mqttServerIp;
+
 nvs_handle_t PersistentConfig::handle = 0;
 bool PersistentConfig::initialized = false;
 
@@ -141,6 +143,26 @@ bool PersistentConfig::setUint(const char *key, uint32_t value)
     return err == ESP_OK;
 }
 
+bool PersistentConfig::getUint(const char *key, uint32_t *out, uint32_t defaultVal)
+{
+    if (!initialized)
+        init();
+
+    esp_err_t err = nvs_get_u32(handle, key, out);
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+    {
+        *out = defaultVal;
+        setUint(key, defaultVal);
+        return true;
+    }
+    if (err != ESP_OK)
+    {
+        *out = defaultVal;
+        return false;
+    }
+    return true;
+}
+
 // MQTT-specific
 bool PersistentConfig::getMqttClientId(char *out, size_t maxLen)
 {
@@ -154,7 +176,7 @@ bool PersistentConfig::setMqttClientId(const char *id)
 
 bool PersistentConfig::getMqttServer(char *out, size_t maxLen)
 {
-    return getString("mqtt_server", out, maxLen, "iot.iolink.ir");
+    return getString("mqtt_server", out, maxLen, "\0");
 }
 bool PersistentConfig::setMqttServer(const char *server)
 {
@@ -203,15 +225,18 @@ bool PersistentConfig::setConfig(char *clientId, char *server, IPAddress ip, uin
     }
     if( mqttTopicEvents != nullptr)
     {
-       success &= setString("mqtt_topic_events", mqttTopicEvents);
+       //success &= setString("mqtt_topic_events", mqttTopicEvents);
+       success &= setString("events", mqttTopicEvents);
     }
     if ( mqttTopicCommands != nullptr)
     {
-       success &= setString("mqtt_topic_commands", mqttTopicCommands);
+       //success &= setString("mqtt_topic_commands", mqttTopicCommands);
+       success &= setString("commands", mqttTopicCommands);
     }
     if ( mqttTopicCommandResponses != nullptr)
     {
-       success &= setString("mqtt_topic_command_responses", mqttTopicCommandResponses);
+       //success &= setString("mqtt_topic_command_responses", mqttTopicCommandResponses);
+       success &= setString("cmnds_resp", mqttTopicCommandResponses);
     }
     return success;
 }
@@ -223,13 +248,14 @@ bool PersistentConfig::loadConfig(char *clientId, char *server, IPAddress ip, ui
 {
     getString("mqtt_client_id", clientId, 32, "ESP32_Vehicle_Detector");
     getString("mqtt_server", server, 64, "iot.iolink.ir");
+    getUint("ip_server", (uint32_t *)&ip, 0);
     getInt("mqtt_port", (int32_t *)port, 1883);
     getString("mqtt_user", user, 32, "");
     getString("mqtt_pass", pass, 32, "");
     getString("lte_apn", apn, 32, "shatelmobile");
-    getString("mqtt_topic_events", mqttTopicEvents, 64, "vehicles/events");
-    getString("mqtt_topic_commands", mqttTopicCommands, 64, "vehicles/commands");
-    getString("mqtt_topic_command_responses", mqttTopicCommandResponses, 64, "vehicles/command_responses");
+    getString("events", mqttTopicEvents, 64, "vehicles/events");
+    getString("commands", mqttTopicCommands, 64, "vehicles/commands");
+    getString("cmnds_resp", mqttTopicCommandResponses, 64, "vehicles/command_responses");
     return true;
 }
 
@@ -802,5 +828,7 @@ bool PersistentConfig::loadAllConfigs()
     success &= loadTrafficRules();
     success &= loadReportConfig();
     success &= loadLoopGeometry();
+    success &= loadConfig(mqttClientId, mqttServer, mqttServerIp, &mqttPort, mqttUser, mqttPass, lte_apn,
+                           mqttTopicEvents, mqttTopicCommands, mqttTopicCommandResponses);
     return success;
 }
