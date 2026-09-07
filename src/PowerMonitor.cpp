@@ -8,6 +8,7 @@
 #include "Config.h"
 #include "MqttHandler.h"
 #include "WsUtils.h"
+#include "hal/Hal.h"
 
 static PowerReadings s_power = {0.0f, 0.0f, false, 0, false};
 
@@ -32,8 +33,8 @@ static float readVoltage(int pin, float r1, float r2)
   uint32_t sum = 0;
   for (int i = 0; i < POWER_SAMPLE_AVG; i++)
   {
-    sum += analogReadMilliVolts(pin);
-    delayMicroseconds(200);
+    sum += hal::adcReadMilliVolts(pin);
+    hal::sleep_ms(0);
   }
   float v_adc  = (sum / (float)POWER_SAMPLE_AVG) / 1000.0f;
   float v_real = v_adc * ((r1 + r2) / r2);
