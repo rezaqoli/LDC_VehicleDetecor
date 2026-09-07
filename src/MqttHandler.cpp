@@ -1,5 +1,6 @@
 #include "MqttHandler.h"
 #include "WsCommandHandler.h" // To reuse command parsing logic if desired
+#include "ReplyChannel.h"
 #include "LteModem.h"
 #include <cstring>
 
@@ -38,10 +39,12 @@ static QueueHandle_t        s_pubQueue       = nullptr;
 static mqtt_pub_item_t      s_pubQueueStorage[MQTT_PUB_QUEUE_LEN];
 
 // Diagnostics (single writer = publisher task; readers = WS handler)
-volatile uint32_t mqttPubPublished = 0;
-volatile uint32_t mqttPubDropped   = 0;
-volatile uint32_t mqttPubReconnect = 0;
-char             mqttPubLastErr[64] = "none";
+volatile uint32_t mqttPubPublished    = 0;
+volatile uint32_t mqttPubPublishedEvt = 0;
+volatile uint32_t mqttPubPublishedRsp = 0;
+volatile uint32_t mqttPubDropped      = 0;
+volatile uint32_t mqttPubReconnect    = 0;
+char             mqttPubLastErr[64]   = "none";
 
 void setLastErr(const char *s)
 {
@@ -132,11 +135,10 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     }
     Serial.println(message);
 
-    // Route to the system command parser; the reply closure enqueues the
-    // response on the publish queue so the caller's task is never blocked.
-    auto reply = [](uint8_t num, const char *msg)
-    { enqueuePublish(MQTT_PUB_KIND_EVENT, msg); };
-    processSystemCommand(message, reply, length);
+    // Route to the system command parser via the medium-aware reply channel.
+    // Replies go to mqttTopicCommandResponses (handled by MqttReplyChannel).
+    IReplyChannel &reply = mqttReplyChannel();
+    processSystemCommand(message, reply, 0);
 }
 
 static bool mqttPublishLocked(const char *topic, const char *payload)
@@ -196,6 +198,7 @@ static void mqttPublishEventInternal(const char *payload)
     if (mqttPublishLocked(mqttTopicEvents, payload))
     {
       Serial.printf("[MQTT] Published event (%d bytes)\n", (int)strlen(payload));
+      mqttPubPublishedEvt++;
       mqttPubPublished++;
       setLastErr("ok");
     }
@@ -222,6 +225,7 @@ static void mqttPublishResponseInternal(const char *payload)
     if (mqttPublishLocked(mqttTopicCommandResponses, payload))
     {
       Serial.printf("[MQTT] Published response (%d bytes)\n", (int)strlen(payload));
+      mqttPubPublishedRsp++;
       mqttPubPublished++;
       setLastErr("ok");
     }

@@ -5,6 +5,7 @@
 #ifndef WS_UTILS_H
 #define WS_UTILS_H
 #include "Globals.h"
+#include "ReplyChannel.h"
 
 // ============================================================
 // WebSocket TX (pooled, non-blocking)
@@ -27,7 +28,7 @@ bool isChannelInEnabledSpeedPair(const char *channelId);
 void refreshDetectorLoopModes();
 void applySpeedPairConfig(uint8_t idx, bool enabled, float distance,
                           uint8_t sensor1, uint8_t ch1, uint8_t sensor2, uint8_t ch2);
-void sendSpeedPairConfig(uint8_t num, uint8_t idx);
-void sendAllSpeedPairConfigs(uint8_t num);
-void sendAllSpeedResults(uint8_t num);
+void sendSpeedPairConfig(IReplyChannel &reply, uint8_t num, uint8_t idx);
+void sendAllSpeedPairConfigs(IReplyChannel &reply, uint8_t num);
+void sendAllSpeedResults(IReplyChannel &reply, uint8_t num);
 #endif // WS_UTILS_H

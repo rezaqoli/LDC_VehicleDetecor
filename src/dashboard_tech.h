@@ -175,21 +175,7 @@ th { background: #eef3f8; }
   </div>
 </div>
 
-<div class="card" style="border-left: 4px solid #ffc107;">
-  <h2>🔋 Power Monitor</h2>
-  <div class="row">
-    <span class="kv">Battery: <b id="pm_bat">-</b> V</span>
-    <span class="kv">Solar: <b id="pm_sol">-</b> V</span>
-    <span class="kv">State: <b id="pm_state">-</b></span>
-    <span class="kv">Age: <b id="pm_age">-</b> s</span>
-  </div>
-  <div class="row" style="margin-top:8px;">
-    <button onclick="sendCmd('GET_POWER')">Refresh</button>
-    <button onclick="startPowerAuto()">Auto-refresh (2s)</button>
-    <button onclick="stopPowerAuto()">Stop</button>
-  </div>
-  <p class="small" id="pm_warn" style="color:#dc3545; display:none; margin-top:6px; font-weight:bold;">⚠ Battery voltage is below 9 V — warning published via MQTT.</p>
-</div>
+
 
 <div class="card" style="border-left: 4px solid #0d6efd;">
   <h2>🕒 Time Sync</h2>
@@ -471,7 +457,7 @@ function handleMessage(d){
     el('mp_err').innerText       = 'none';
   } else if (d.startsWith('POWER|') || d.startsWith('BATTERY_LOW|') || d.startsWith('BATTERY_OK|')) {
     if (d.startsWith('BATTERY_LOW|') || d.startsWith('BATTERY_OK|')) log(d);
-    sendCmd('GET_POWER');
+    //sendCmd('GET_POWER');
   } else if (d.startsWith('POWER|')) {
     const v = parseKv(d.substring(6), '|');
     if (v.bat  !== undefined) el('pm_bat').innerText  = v.bat;
@@ -512,7 +498,7 @@ function stopPowerAuto() {
 buildLcTable();
 buildLpTable();
 connect();
-startPowerAuto();
+//startPowerAuto();
 </script>
 </body>
 </html>

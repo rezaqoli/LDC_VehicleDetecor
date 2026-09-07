@@ -13,12 +13,15 @@ void mqttInit();
 void taskMqttLoop(void *);
 void taskMqttPublisher(void *);
 void mqttPublishEvent(const char* payload);
+void mqttPublishResponse(const char* payload);
 void mqttPublishCallback(char* topic, byte* payload, unsigned int length);
 void mqttCallback(char *topic, byte *payload, unsigned int length);
 bool mqttConnect();
 
 // Diagnostics counters (atomic-ish for single-writer/single-reader)
-extern volatile uint32_t mqttPubPublished;
+extern volatile uint32_t mqttPubPublished;     // sum of evt + rsp (back-compat)
+extern volatile uint32_t mqttPubPublishedEvt; // events topic
+extern volatile uint32_t mqttPubPublishedRsp; // command_responses topic
 extern volatile uint32_t mqttPubDropped;
 extern volatile uint32_t mqttPubReconnect;
 extern char             mqttPubLastErr[64];

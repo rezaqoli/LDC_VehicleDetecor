@@ -63,8 +63,8 @@ extern char mqttTopicCommandResponses[64];  // Topic for command responses
 // ============================================================
 #define BATTERY_PIN        1   // ADC1_CH0
 #define SOLAR_PIN          2   // ADC1_CH1
-#define VOLTAGE_DIVIDER_R1 100000.0f
-#define VOLTAGE_DIVIDER_R2 100000.0f
+#define VOLTAGE_DIVIDER_R1 150.0f
+#define VOLTAGE_DIVIDER_R2 10.0f
 #define BATTERY_LOW_V      9.0f
 #define BATTERY_OK_V       9.5f
 #define POWER_SAMPLE_AVG   32

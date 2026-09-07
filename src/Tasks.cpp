@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 #include "TrafficStats.h"
 #include "TrafficMonitor.h"
+#include "MqttHandler.h"
 
 const u8_t LedSensors[8] = {LEDs1, LEDs2, LEDs3, LEDs4, LEDs5, LEDs6, LEDs7, LEDs8 };
 // ============================================================
@@ -304,6 +305,9 @@ void taskSpeedMatch(void *)
                  "SPEED|idx:%u|speed:%.1f|len:%.2f|type:%s|delay:%.2f|dist:%.2f|a:%s|b:%s",
                  i, st.last_speed_kmh, st.last_length_m, st.last_type, st.last_delay_ms, cfgPair.distance, id1, id2);
         wsSend(msg);
+        #ifdef ENABLE_MQTT
+          mqttPublishEvent(msg);
+        #endif
         Serial.println(msg);
       }
 

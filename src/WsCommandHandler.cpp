@@ -57,7 +57,7 @@ static int parsePipeFloats(const String &s, float *out, int max)
   return cnt;
 }
 
-void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, const char *msg), uint32_t num)
+void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
 {
   if (cmd.startsWith("CALIBRATE_CHANNEL|"))
   {
@@ -68,14 +68,14 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       int ch = (int)p[1];
       if (s < 0 || s >= 2 || ch < 0 || ch >= 4)
       {
-        replyFunc(num, "ERROR|Invalid_channel");
+        reply.send(num, "ERROR|Invalid_channel");
         return;
       }
 
       det[s][ch].startCalibration();
       char msg[48];
       snprintf(msg, sizeof(msg), "CALIBRATION_STARTED|%s", det[s][ch].id());
-      replyFunc(num, msg);
+      reply.send(num, msg);
       // wsSendToClient(num, msg);
       Serial.printf("[CAL] Channel calibration started: %s\n", det[s][ch].id());
     }
@@ -85,7 +85,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     for (int s = 0; s < 2; s++)
       for (int ch = 0; ch < 4; ch++)
         det[s][ch].startCalibration();
-    replyFunc(num, "CALIBRATION_STARTED");
+    reply.send(num, "CALIBRATION_STARTED");
   }
   else if (cmd.startsWith("CONFIG|"))
   {
@@ -97,7 +97,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       float distance = p[1];
       if (distance <= 0.0f)
       {
-        replyFunc(num, "ERROR|Invalid_distance");
+        reply.send(num, "ERROR|Invalid_distance");
         return;
       }
       uint8_t sensor1 = 0;
@@ -124,7 +124,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       formatLoopChannelId(loopCfg[0].sensor2, loopCfg[0].ch2, id2, sizeof(id2));
       Serial.printf("[CONFIG] Pair=0 Dual=%d Dist=%.2fm Endpoints=%s<->%s\n",
                     loopCfg[0].dualLoop, loopCfg[0].distance, id1, id2);
-      sendSpeedPairConfig(num, 0);
+      sendSpeedPairConfig(reply, num, 0);
       PersistentConfig::saveLoopConfig(0, loopCfg[0]);
     }
   }
@@ -137,7 +137,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       uint8_t idx = (uint8_t)constrain((int)p[0], 0, SPEED_PAIR_COUNT - 1);
       if (p[2] <= 0.0f)
       {
-        replyFunc(num, "ERROR|Invalid_distance");
+        reply.send(num, "ERROR|Invalid_distance");
         return;
       }
       applySpeedPairConfig(
@@ -154,7 +154,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       formatLoopChannelId(loopCfg[idx].sensor2, loopCfg[idx].ch2, id2, sizeof(id2));
       Serial.printf("[CONFIG] Pair=%u Dual=%d Dist=%.2fm Endpoints=%s<->%s\n",
                     idx, loopCfg[idx].dualLoop, loopCfg[idx].distance, id1, id2);
-      sendSpeedPairConfig(num, idx);
+      sendSpeedPairConfig(reply, num, idx);
       PersistentConfig::saveLoopConfig(idx, loopCfg[idx]);
     }
   }
@@ -180,7 +180,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
           ldc.LDC1614_set_driver_current(bus, ch, lc.driver_current[ch]);
           xSemaphoreGive(mtx);
           PersistentConfig::saveSensorLC(s, lc);
-          replyFunc(num, "LC_ACK");
+          reply.send(num, "LC_ACK");
         }
       }
     }
@@ -207,7 +207,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
         det[s][ch].setConfig(cfg);
       }
     }
-    replyFunc(num, "THRESHOLD_ACK");
+    reply.send(num, "THRESHOLD_ACK");
     PersistentConfig::saveDetectorConfigs();
   }
   else if (cmd.startsWith("SET_EVENT_RANGE|"))
@@ -219,7 +219,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       uint32_t max_ms = (uint32_t)p[1];
       if (min_ms == 0 || max_ms <= min_ms)
       {
-        replyFunc(num, "ERROR|Invalid_event_range");
+        reply.send(num, "ERROR|Invalid_event_range");
         return;
       }
       for (int s = 0; s < 2; s++)
@@ -230,7 +230,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
           cfg.max_event_ms = max_ms;
           det[s][ch].setConfig(cfg);
         }
-      replyFunc(num, "EVENT_RANGE_ACK");
+      reply.send(num, "EVENT_RANGE_ACK");
       PersistentConfig::saveDetectorConfigs();
     }
   }
@@ -280,7 +280,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
           }
           det[s][ch].setConfig(cfg);
         }
-      replyFunc(num, "CLASSIFY_ACK");
+      reply.send(num, "CLASSIFY_ACK");
       PersistentConfig::saveDetectorConfigs();
     }
   }
@@ -291,7 +291,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     {
       if (p[0] <= 0.0f || p[1] <= 0.0f || p[2] <= 0.0f || p[3] <= 0.0f || p[4] <= 0.0f)
       {
-        replyFunc(num, "ERROR|Invalid_detector_values");
+        reply.send(num, "ERROR|Invalid_detector_values");
         return;
       }
       for (int s = 0; s < 2; s++)
@@ -307,7 +307,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
           det[s][ch].setConfig(cfg);
         }
       }
-      replyFunc(num, "DETECTOR_ACK");
+      reply.send(num, "DETECTOR_ACK");
       PersistentConfig::saveDetectorConfigs();
     }
   }
@@ -319,7 +319,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     {
       if (p[1] <= 0.0f || p[2] <= 0.0f)
       {
-        replyFunc(num, "ERROR|Invalid_sigma_values");
+        reply.send(num, "ERROR|Invalid_sigma_values");
         return;
       }
       for (int s = 0; s < 2; s++)
@@ -337,17 +337,17 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
         }
       }
 
-      replyFunc(num, "AUTO_THRESH_ACK");
+      reply.send(num, "AUTO_THRESH_ACK");
       PersistentConfig::saveDetectorConfigs();
     }
   }
   else if (cmd.startsWith("GET_SPEED_CONFIG"))
   {
-    sendAllSpeedPairConfigs(num);
+    sendAllSpeedPairConfigs(reply, num);
   }
   else if (cmd == "GET_SPEED_STATE")
   {
-    sendAllSpeedResults(num);
+    sendAllSpeedResults(reply, num);
   }
   else if (cmd.startsWith("GET_CONFIG"))
   {
@@ -374,14 +374,14 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              cfg.classify_com_center_min, cfg.classify_com_center_max,
              cfg.classify_width_medium, cfg.classify_width_wide,
              cfg.classify_std_peak_high, cfg.classify_std_peak_low);
-    replyFunc(num, msg);
-    sendAllSpeedPairConfigs(num);
+    reply.send(num, msg);
+    sendAllSpeedPairConfigs(reply, num);
   }
   else if (cmd.startsWith("GET_CPU"))
   {
     char msg[32];
     snprintf(msg, sizeof(msg), "CPU_ACK|%u|%u", cpu_usage_core0, cpu_usage_core1);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd.startsWith("GET_STATUS"))
   {
@@ -389,7 +389,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     for (int s = 0; s < 2; s++)
       for (int ch = 0; ch < 4; ch++)
         snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), "|%s:%.0f", det[s][ch].id(), det[s][ch].baseline());
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd.startsWith("GET_NOISE"))
   {
@@ -417,7 +417,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
         }
       }
     }
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd.startsWith("GET_CALIB_STATUS"))
   {
@@ -437,13 +437,13 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       if (pos >= (int)sizeof(msg) - 128)
         break;
     }
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd.startsWith("GET_LOOP_GEOMETRY"))
   {
     char msg[1024];
     g_loopGeometry.buildStatusString(msg, sizeof(msg));
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd.startsWith("SET_LOOP_GEOMETRY|") || cmd.startsWith("SET_LOOP_ADD|") || cmd.startsWith("SET_LOOP_DONE"))
   {
@@ -452,17 +452,17 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       if (cmd.startsWith("SET_LOOP_DONE"))
       {
         trafficMonitorSyncFromGeometry();
-        replyFunc(num, "LOOP_GEOMETRY_ACK|adjacency_computed");
+        reply.send(num, "LOOP_GEOMETRY_ACK|adjacency_computed");
       }
       else
       {
-        replyFunc(num, "LOOP_GEOMETRY_ACK");
+        reply.send(num, "LOOP_GEOMETRY_ACK");
       }
       PersistentConfig::saveLoopGeometry();
     }
     else
     {
-      replyFunc(num, "ERROR|Invalid_loop_geometry");
+      reply.send(num, "ERROR|Invalid_loop_geometry");
     }
   }
   else if (cmd.startsWith("SET_DEFAULT_KMH"))
@@ -483,7 +483,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
         }
       }
 
-      replyFunc(num, "DEFAULT_KMH_ACK");
+      reply.send(num, "DEFAULT_KMH_ACK");
       PersistentConfig::saveDetectorConfigs();
     }
   }
@@ -501,12 +501,12 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       clear_after = (mode == 1);
     }
     String report = trafficStatsBuildReport(clear_after);
-    replyFunc(num, report.c_str());
+    reply.send(num, report.c_str());
   }
   else if (cmd.startsWith("RESET_STATS"))
   {
     trafficStatsReset();
-    replyFunc(num, "STATS_RESET_ACK");
+    reply.send(num, "STATS_RESET_ACK");
   }
   else if (cmd.startsWith("SET_REPORT_INTERVAL|"))
   {
@@ -527,11 +527,11 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       }
       char msg[64];
       snprintf(msg, sizeof(msg), "REPORT_INTERVAL_ACK|%u", minutes);
-      replyFunc(num, msg);
+      reply.send(num, msg);
     }
     else
     {
-      replyFunc(num, "ERROR|Invalid_report_interval");
+      reply.send(num, "ERROR|Invalid_report_interval");
     }
   }
   else if (cmd.startsWith("SET_REPORT_ENABLE|"))
@@ -541,12 +541,12 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
     {
       g_report_cfg.enabled = ((int)p[0] != 0);
-      replyFunc(num, g_report_cfg.enabled ? "REPORT_ENABLE_ACK|1" : "REPORT_ENABLE_ACK|0");
+      reply.send(num, g_report_cfg.enabled ? "REPORT_ENABLE_ACK|1" : "REPORT_ENABLE_ACK|0");
       PersistentConfig::saveReportConfig();
     }
     else
     {
-      replyFunc(num, "ERROR|Invalid_report_enable");
+      reply.send(num, "ERROR|Invalid_report_enable");
     }
   }
   else if (cmd.startsWith("SET_REPORT_CLEAR|"))
@@ -556,12 +556,12 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     if (p_index >= 0 && parsePipeFloats(cmd.substring(p_index + 1), p, 1) == 1)
     {
       g_report_cfg.periodic_clear = ((int)p[0] != 0);
-      replyFunc(num, g_report_cfg.periodic_clear ? "REPORT_CLEAR_ACK|1" : "REPORT_CLEAR_ACK|0");
+      reply.send(num, g_report_cfg.periodic_clear ? "REPORT_CLEAR_ACK|1" : "REPORT_CLEAR_ACK|0");
       PersistentConfig::saveReportConfig();
     }
     else
     {
-      replyFunc(num, "ERROR|Invalid_report_clear");
+      reply.send(num, "ERROR|Invalid_report_clear");
     }
   }
   else if (cmd.startsWith("SET_RULES|"))
@@ -570,7 +570,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
     int p_index = cmd.indexOf('|');
     if (p_index < 0)
     {
-      replyFunc(num, "ERROR|Invalid_rules");
+      reply.send(num, "ERROR|Invalid_rules");
       return;
     }
     int count = parsePipeFloats(cmd.substring(p_index + 1), p, 8);
@@ -602,7 +602,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              (unsigned long)g_traffic_rules.min_straddle_overlap_ms,
              g_traffic_rules.min_straddle_overlap_ratio,
              g_traffic_rules.assume_speed_kmh);
-    replyFunc(num, msg);
+    reply.send(num, msg);
     PersistentConfig::saveTrafficRules();
   }
   else if (cmd.startsWith("SET_ADJACENT|"))
@@ -620,11 +620,11 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       char msg[64];
       snprintf(msg, sizeof(msg), "ADJACENT_ACK|S%uC%u-S%uC%u|%d",
                s1, ch1, s2, ch2, enabled ? 1 : 0);
-      replyFunc(num, msg);
+      reply.send(num, msg);
     }
     else
     {
-      replyFunc(num, "ERROR|Invalid_adjacent");
+      reply.send(num, "ERROR|Invalid_adjacent");
     }
   }
   else if (cmd.startsWith("SET_MQTT_ID|"))
@@ -634,7 +634,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
 
     if (newId.length() == 0 || newId.length() > 31)
     {
-      replyFunc(num, "ERROR|Invalid ID length (1-31 chars)");
+      reply.send(num, "ERROR|Invalid ID length (1-31 chars)");
       return;
     }
 
@@ -652,7 +652,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
 
     if (!valid)
     {
-      replyFunc(num, "ERROR|ID must be alphanumeric, hyphen, underscore only");
+      reply.send(num, "ERROR|ID must be alphanumeric, hyphen, underscore only");
       return;
     }
 
@@ -665,19 +665,19 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
 
       char msg[64];
       snprintf(msg, sizeof(msg), "MQTT_ID_ACK|%s|saved|restart_to_apply", mqttClientId);
-      replyFunc(num, msg);
+      reply.send(num, msg);
       Serial.printf("[CFG] MQTT ID changed to: %s (restart required)\n", mqttClientId);
     }
     else
     {
-      replyFunc(num, "ERROR|Failed to save ID");
+      reply.send(num, "ERROR|Failed to save ID");
     }
   }
   else if (cmd == "GET_MQTT_ID")
   {
     char msg[64];
     snprintf(msg, sizeof(msg), "MQTT_ID|%s", mqttClientId);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd.startsWith("SET_MQTT_SERVER|"))
   {
@@ -688,7 +688,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       mqttClient.setServer(mqttServerIp, mqttPort);
     else
       mqttClient.setServer(mqttServer, mqttPort);
-    replyFunc(num, "MQTT_SERVER_ACK");
+    reply.send(num, "MQTT_SERVER_ACK");
   }
   else if (cmd.startsWith("SET_MQTT_FULL|"))
   {
@@ -756,11 +756,11 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       else
         mqttClient.setServer(mqttServer, mqttPort);
 
-      replyFunc(num, "MQTT_CFG_FULL_ACK|saved|restart_recommended");
+      reply.send(num, "MQTT_CFG_FULL_ACK|saved|restart_recommended");
     }
     else
     {
-      replyFunc(num, "ERROR|Invalid_mqtt_full_payload");
+      reply.send(num, "ERROR|Invalid_mqtt_full_payload");
     }
   }
   else if (cmd == "GET_MQTT_CFG")
@@ -772,14 +772,14 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              mqttServerIp.toString().c_str(),
              mqttUser, mqttPass,
              lte_apn, mqttTopicEvents, mqttTopicCommands, mqttTopicCommandResponses);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "GET_MQTT_SERVER")
   {
     char msg[96];
     snprintf(msg, sizeof(msg), "MQTT_SERVER|%s|%u|%s",
              mqttServer, (unsigned)mqttPort, mqttServerIp.toString().c_str());
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "GET_WIFI")
   {
@@ -788,7 +788,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              WiFi.SSID().c_str(),
              WiFi.localIP().toString().c_str(),
              (int)WiFi.RSSI());
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "GET_SENSOR_LC")
   {
@@ -812,12 +812,12 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
       if (pos >= (int)sizeof(msg) - 64)
         break;
     }
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "GET_LOOP_CFG")
   {
     // Reuse sendAllSpeedPairConfigs to push CONFIG_ACK for each pair
-    sendAllSpeedPairConfigs(num);
+    sendAllSpeedPairConfigs(reply, num);
   }
   else if (cmd == "GET_TRAFFIC_RULES")
   {
@@ -832,7 +832,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              (unsigned long)g_traffic_rules.min_straddle_overlap_ms,
              g_traffic_rules.min_straddle_overlap_ratio,
              g_traffic_rules.assume_speed_kmh);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "GET_REPORT_CFG")
   {
@@ -841,38 +841,42 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              g_report_cfg.enabled ? 1 : 0,
              (unsigned long)g_report_cfg.interval_ms,
              g_report_cfg.periodic_clear ? 1 : 0);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "GET_DEFAULT_KMH")
   {
     DetectorConfig cfg = det[0][0].getConfig();
     char msg[64];
     snprintf(msg, sizeof(msg), "DEFAULT_KMH|%.2f", cfg.default_speed_kmh);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "SAVE_ALL")
   {
     bool ok = PersistentConfig::saveAllConfigs();
-    replyFunc(num, ok ? "SAVE_ALL_ACK|ok" : "SAVE_ALL_ACK|partial_failure");
+    reply.send(num, ok ? "SAVE_ALL_ACK|ok" : "SAVE_ALL_ACK|partial_failure");
   }
   else if (cmd == "GET_MQTT_PUB_STATS")
   {
-    char msg[192];
+    char msg[256];
     snprintf(msg, sizeof(msg),
-             "MQTT_PUB_STATS|published:%lu|dropped:%lu|reconnect:%lu|last_err:%s",
+             "MQTT_PUB_STATS|published:%lu|published_evt:%lu|published_rsp:%lu|dropped:%lu|reconnect:%lu|last_err:%s",
              (unsigned long)mqttPubPublished,
+             (unsigned long)mqttPubPublishedEvt,
+             (unsigned long)mqttPubPublishedRsp,
              (unsigned long)mqttPubDropped,
              (unsigned long)mqttPubReconnect,
              mqttPubLastErr);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "RESET_MQTT_PUB_STATS")
   {
-    mqttPubPublished = 0;
-    mqttPubDropped = 0;
-    mqttPubReconnect = 0;
+    mqttPubPublished    = 0;
+    mqttPubPublishedEvt = 0;
+    mqttPubPublishedRsp = 0;
+    mqttPubDropped      = 0;
+    mqttPubReconnect    = 0;
     setLastErr("reset");
-    replyFunc(num, "MQTT_PUB_STATS_RESET_ACK");
+    reply.send(num, "MQTT_PUB_STATS_RESET_ACK");
   }
   else if (cmd == "GET_POWER")
   {
@@ -883,7 +887,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              "POWER|bat:%.2f|sol:%.2f|low:%d|valid:%d|age_s:%lu",
              p.battery_v, p.solar_v, p.battery_low ? 1 : 0,
              p.valid ? 1 : 0, (unsigned long)age_s);
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
   else if (cmd == "GET_TIME")
   {
@@ -897,7 +901,7 @@ void processSystemCommand(const String &cmd, void (*replyFunc)(uint8_t num, cons
              iso,
              (unsigned long)getLastSyncTime(),
              (unsigned long)millis());
-    replyFunc(num, msg);
+    reply.send(num, msg);
   }
 }
 
@@ -911,5 +915,6 @@ void webSocketEvent(uint8_t num, uint8_t type, uint8_t *payload, size_t len)
   String cmd = String((char *)payload, len);
   cmd.trim();
 
-  processSystemCommand(cmd, wsSendToClient, num);
+  IReplyChannel &reply = wsReplyChannel();
+  processSystemCommand(cmd, reply, num);
 }

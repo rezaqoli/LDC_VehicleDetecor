@@ -139,7 +139,7 @@ void applySpeedPairConfig(uint8_t idx, bool enabled, float distance,
   refreshDetectorLoopModes();
 }
 
-void sendSpeedPairConfig(uint8_t num, uint8_t idx)
+void sendSpeedPairConfig(IReplyChannel &reply, uint8_t num, uint8_t idx)
 {
   if (idx >= SPEED_PAIR_COUNT)
     return;
@@ -159,16 +159,16 @@ void sendSpeedPairConfig(uint8_t num, uint8_t idx)
            cfgPair.ch2,
            id1,
            id2);
-  wsSendToClient(num, msg);
+  reply.send(num, msg);
 }
 
-void sendAllSpeedPairConfigs(uint8_t num)
+void sendAllSpeedPairConfigs(IReplyChannel &reply, uint8_t num)
 {
   for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
-    sendSpeedPairConfig(num, i);
+    sendSpeedPairConfig(reply, num, i);
 }
 
-void sendAllSpeedResults(uint8_t num)
+void sendAllSpeedResults(IReplyChannel &reply, uint8_t num)
 {
   for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
   {
@@ -190,6 +190,6 @@ void sendAllSpeedResults(uint8_t num)
              id1,
              id2,
              (unsigned long)st.last_update_us);
-    wsSendToClient(num, msg);
+    reply.send(num, msg);
   }
 }
