@@ -25,6 +25,9 @@ namespace
   {
     Serial.printf("[OTA] %s\n", message);
     wsSend(message);
+    // OTA state is an event, so fleet dashboards and other MQTT consumers can
+    // observe progress without depending on the originating command session.
+    mqttPublishEvent(message);
     mqttPublishResponse(message);
   }
 
