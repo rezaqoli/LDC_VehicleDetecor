@@ -24,6 +24,8 @@ th, td { border: 1px solid #d9dde2; padding: 7px; text-align: center; }
 th { background: #eef3f8; }
 .status-connected { color: #198754; font-weight: bold; }
 .status-disconnected { color: #dc3545; font-weight: bold; }
+.system-status { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 14px; padding:10px; background:#fff; border-radius:8px; box-shadow:0 1px 5px rgba(0,0,0,.08); }
+.system-status .item { font-size:12px; padding:4px 8px; border-radius:5px; background:#eef3f8; }
 .event-log { height: 260px; overflow-y: auto; background: #13212f; color: #8ff4a2; padding: 10px; font-family: Consolas, monospace; font-size: 12px; border-radius: 8px; }
 .small { font-size: 12px; color: #555; }
 .grid-9 { display: grid; grid-template-columns: repeat(9, 1fr); gap: 6px; }
@@ -42,6 +44,13 @@ th { background: #eef3f8; }
   <a href="/mqtt">/mqtt (Monitor)</a>
 </p>
 <p>Connection: <span id="connStatus" class="status-disconnected">⚪ Disconnected</span></p>
+<div class="system-status" aria-label="Device connection status">
+  <span class="item">Wi-Fi: <b id="status_wifi">-</b></span>
+  <span class="item">Modem: <b id="status_modem">-</b></span>
+  <span class="item">Network: <b id="status_network">-</b></span>
+  <span class="item">Data: <b id="status_data">-</b></span>
+  <span class="item">MQTT: <b id="status_mqtt">-</b></span>
+</div>
 
 <div class="card">
   <h2>⚙️ System Commands</h2>
@@ -334,13 +343,31 @@ let noiseData = { 0: {std:[0,0,0,0], rms:[0,0,0,0], pct:[0,0,0,0] }, 1: {std:[0,
 
 function el(id) { return document.getElementById(id); }
 
+function updateSystemStatus(data) {
+  const values = {};
+  data.substring('SYSTEM_STATUS|'.length).split('|').forEach(part => {
+    const i = part.indexOf(':');
+    if (i > 0) values[part.substring(0, i)] = part.substring(i + 1);
+  });
+  ['wifi','modem','network','data','mqtt'].forEach(key => {
+    const node = el('status_' + key);
+    if (!node || values[key] === undefined) return;
+    node.innerText = values[key];
+    node.className = values[key] === 'UP' ? 'status-connected' :
+                     values[key] === 'UNKNOWN' ? '' : 'status-disconnected';
+  });
+}
+
 function connect() {
   ws = new WebSocket('ws://' + IP + ':81/');
   ws.onopen = () => {
     el('connStatus').innerText = '🟢 Connected';
     el('connStatus').className = 'status-connected';
     log('[System] Connected to WebSocket');
+    sendCmd('GET_SYSTEM_STATUS');
     refreshAllData();
+    if (window._statusInterval) clearInterval(window._statusInterval);
+    window._statusInterval = setInterval(() => sendCmd('GET_SYSTEM_STATUS'), 5000);
     // start periodic updates
     // if (window._refreshInterval) clearInterval(window._refreshInterval);
     // window._refreshInterval = setInterval(() => {
@@ -451,7 +478,9 @@ function refreshAllData() {
 
 // -------------------- Message parser --------------------
 function handleMessage(data) {
-  if (data.startsWith('SENSOR_DATA|')) {
+  if (data.startsWith('SYSTEM_STATUS|')) {
+    updateSystemStatus(data);
+  } else if (data.startsWith('SENSOR_DATA|')) {
     parseSensorData(data);
   } else if (data.startsWith('EVENT|')) {
     parseEvent(data);

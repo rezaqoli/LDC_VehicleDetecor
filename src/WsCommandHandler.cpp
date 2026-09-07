@@ -385,12 +385,48 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
     snprintf(msg, sizeof(msg), "CPU_ACK|%u|%u", cpu_usage_core0, cpu_usage_core1);
     reply.send(num, msg);
   }
-  else if (cmd.startsWith("GET_STATUS"))
+  else if (cmd == "GET_STATUS" || cmd.startsWith("GET_STATUS|"))
   {
     char msg[128] = "STATUS";
     for (int s = 0; s < 2; s++)
       for (int ch = 0; ch < 4; ch++)
         snprintf(msg + strlen(msg), sizeof(msg) - strlen(msg), "|%s:%.0f", det[s][ch].id(), det[s][ch].baseline());
+    reply.send(num, msg);
+  }
+  else if (cmd == "GET_SYSTEM_STATUS")
+  {
+    const bool wifiConnected = WiFi.status() == WL_CONNECTED;
+    bool networkConnected = false;
+    bool dataConnected = lteGprsConnected;
+    int signal = -1;
+    String operatorName = "-";
+    const char *modemState = lteInitialized ? "UP" : "DOWN";
+    const char *networkState = "UNKNOWN";
+    const char *dataState = lteInitialized ? (dataConnected ? "UP" : "DOWN") : "UNKNOWN";
+
+    // TinyGSM status queries use the modem UART, so serialize them with the
+    // LTE/MQTT workers. If the modem is busy, UNKNOWN is more honest than a
+    // stale or misleading DOWN result.
+    if (lteInitialized && takeModem(100))
+    {
+      networkConnected = modem.isNetworkConnected();
+      dataConnected = modem.isGprsConnected();
+      lteGprsConnected = dataConnected;
+      signal = modem.getSignalQuality();
+      operatorName = modem.getOperator();
+      networkState = networkConnected ? "UP" : "DOWN";
+      dataState = dataConnected ? "UP" : "DOWN";
+      giveModem();
+    }
+
+    char msg[320];
+    snprintf(msg, sizeof(msg),
+             "SYSTEM_STATUS|wifi:%s|wifi_ip:%s|modem:%s|network:%s|data:%s|mqtt:%s|signal:%d|operator:%s",
+             wifiConnected ? "UP" : "DOWN",
+             WiFi.localIP().toString().c_str(),
+             modemState, networkState, dataState,
+             mqttClient.connected() ? "UP" : "DOWN",
+             signal, operatorName.c_str());
     reply.send(num, msg);
   }
   else if (cmd.startsWith("GET_NOISE"))

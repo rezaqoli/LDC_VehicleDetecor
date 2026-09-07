@@ -22,6 +22,8 @@ button.danger { background: #dc3545; }
 button.danger:hover { background: #b02a37; }
 .status-connected { color: #198754; font-weight: bold; }
 .status-disconnected { color: #dc3545; font-weight: bold; }
+.system-status { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 14px; padding:10px; background:#fff; border-radius:8px; box-shadow:0 1px 5px rgba(0,0,0,.08); }
+.system-status .item { font-size:12px; padding:4px 8px; border-radius:5px; background:#eef3f8; }
 .event-log { height: 320px; overflow-y: auto; background: #13212f; color: #8ff4a2; padding: 10px; font-family: Consolas, monospace; font-size: 12px; border-radius: 8px; }
 .event-log .in  { color: #8ff4a2; }
 .event-log .out { color: #79c0ff; }
@@ -43,6 +45,13 @@ th { background: #eef3f8; }
   <a href="/mqtt">/mqtt (Monitor)</a>
 </p>
 <p>Connection: <span id="connStatus" class="status-disconnected">⚪ Disconnected</span></p>
+<div class="system-status" aria-label="Device connection status">
+  <span class="item">Wi-Fi: <b id="status_wifi">-</b></span>
+  <span class="item">Modem: <b id="status_modem">-</b></span>
+  <span class="item">Network: <b id="status_network">-</b></span>
+  <span class="item">Data: <b id="status_data">-</b></span>
+  <span class="item">MQTT: <b id="status_mqtt">-</b></span>
+</div>
 
 <div class="card">
   <h2>📊 Broker Status</h2>
@@ -113,14 +122,32 @@ let renderScheduled = false;
 
 function el(id){ return document.getElementById(id); }
 
+function updateSystemStatus(data){
+  const values = {};
+  data.substring('SYSTEM_STATUS|'.length).split('|').forEach(part => {
+    const i = part.indexOf(':');
+    if (i > 0) values[part.substring(0, i)] = part.substring(i + 1);
+  });
+  ['wifi','modem','network','data','mqtt'].forEach(key => {
+    const node = el('status_' + key);
+    if (!node || values[key] === undefined) return;
+    node.innerText = values[key];
+    node.className = values[key] === 'UP' ? 'status-connected' :
+                     values[key] === 'UNKNOWN' ? '' : 'status-disconnected';
+  });
+}
+
 function connect(){
   ws = new WebSocket('ws://' + IP + ':81/');
   ws.onopen = () => {
     el('connStatus').innerText = '🟢 Connected';
     el('connStatus').className = 'status-connected';
     pushLine('sys', '[SYS] Connected to WebSocket');
+    sendCmd('GET_SYSTEM_STATUS');
     sendCmd('GET_MQTT_CFG');
     sendCmd('GET_REPORT');
+    if (window._statusInterval) clearInterval(window._statusInterval);
+    window._statusInterval = setInterval(() => sendCmd('GET_SYSTEM_STATUS'), 5000);
   };
   ws.onclose = () => {
     el('connStatus').innerText = '🔴 Disconnected';
@@ -183,6 +210,10 @@ function publishTest(){
 }
 
 function handleMessage(d){
+  if (d.startsWith('SYSTEM_STATUS|')) {
+    updateSystemStatus(d);
+    return;
+  }
   // SENSOR_DATA is high-rate raw telemetry — not relevant on the MQTT panel.
   if (d.startsWith('SENSOR_DATA|')) return;
 
