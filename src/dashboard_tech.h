@@ -233,7 +233,7 @@ function connect(){
     sendCmd('GET_SYSTEM_STATUS');
     refreshAll();
     if (window._statusInterval) clearInterval(window._statusInterval);
-    window._statusInterval = setInterval(() => sendCmd('GET_SYSTEM_STATUS'), 5000);
+    //window._statusInterval = setInterval(() => sendCmd('GET_SYSTEM_STATUS'), 5000);
   };
   ws.onclose = () => {
     el('connStatus').innerText = '🔴 Disconnected';

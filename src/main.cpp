@@ -295,6 +295,7 @@ void setup()
 //xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
 // ||
 //xTaskCreatePinnedToCore(taskMqttLoop,          "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS ||
+//xTaskCreatePinnedToCore(taskGnssIdleWatcher,  "GNSS",    3072, NULL, 1, NULL, 1) != pdPASS ||
   if (
     xTaskCreatePinnedToCore(taskMqttLoop,          "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskMqttPublisher,    "MQTT-Pub",  8192, NULL, 2, NULL, 1) != pdPASS ||
@@ -305,7 +306,7 @@ void setup()
       xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 1, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskGnssIdleWatcher,  "GNSS",    3072, NULL, 1, NULL, 1) != pdPASS ||
+      
       xTaskCreatePinnedToCore(taskSmsService,      "SMS",     4096, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 6, NULL, 1) != pdPASS ||
