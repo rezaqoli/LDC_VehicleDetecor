@@ -112,7 +112,9 @@ static bool syncTimeFromHttp()
   const char *o = strstr(body.c_str(), "\"raw_offset\":");
   if (o) rawOffset = atol(o + 13);
 
-  time_t final = (time_t)unixtime + (time_t)rawOffset;
+  // worldtimeapi's unixtime is already UTC.  The configured TZ is applied by
+  // localtime()/strftime(), so adding raw_offset here would shift local time twice.
+  time_t final = (time_t)unixtime;
   if (final < 1609459200L)
   {
     Serial.printf("[TIME] Rejecting time %ld (before 2021)\n", (long)final);

@@ -989,6 +989,9 @@ void send_full_features(const EventResult &ev, void (*wsCallback)(const char *))
 
     if (wsCallback)
         wsCallback(msg);
+    #ifdef ENABLE_MQTT
+        mqttPublishEvent(msg);
+    #endif
     Serial.println(msg);
 }
 

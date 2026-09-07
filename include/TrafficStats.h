@@ -50,7 +50,7 @@ struct TrafficRulesConfig
 struct ReportConfig
 {
     bool enabled = true;
-    uint32_t interval_ms = 20 * 60 * 1000;
+    uint32_t interval_ms = 5 * 60 * 1000;
     bool periodic_clear = false;
 };
 

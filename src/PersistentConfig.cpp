@@ -93,7 +93,9 @@ bool PersistentConfig::setString(const char *key, const char *value)
         return false;
     }
 
-    Serial.printf("[NVS] Saved '%s' = '%s'\n", key, value);
+    // Values can contain Wi-Fi, APN, or broker credentials; never expose them
+    // through the serial log.
+    Serial.printf("[NVS] Saved '%s' (%u bytes)\n", key, (unsigned)strlen(value));
     return true;
 }
 
@@ -493,7 +495,10 @@ bool PersistentConfig::loadLoopConfig(uint8_t idx, LoopConfig &cfg)
     if (buf[0] == '\0')
     {
         // Use defaults
-        cfg = LoopConfig{false, 0.4f, 0, 0, 1, 0};
+        static const LoopConfig defaults[SPEED_PAIR_COUNT] = {
+            {false, 0.4f, 0, 0, 0, 1}, {false, 0.4f, 0, 2, 0, 3},
+            {false, 0.4f, 1, 0, 1, 1}, {false, 0.4f, 1, 2, 1, 3}};
+        cfg = defaults[(idx < SPEED_PAIR_COUNT) ? idx : 0];
         saveLoopConfig(idx, cfg);
         return true;
     }
@@ -520,7 +525,7 @@ bool PersistentConfig::loadLoopConfig(uint8_t idx, LoopConfig &cfg)
     }
     else
     {
-        cfg = LoopConfig{false, 0.4f, 0, 0, 1, 0};
+        cfg = LoopConfig{false, 0.4f, 0, 0, 0, 1};
     }
 
     return true;

@@ -16,6 +16,7 @@
 #include "dashboard_html.h"
 #include "dashboard_tech.h"
 #include "dashboard_mqtt.h"
+#include "dashboard_setup.h"
 #include <ESP2SOTA.h>
 
 #include "SensorDriver.h"
@@ -25,6 +26,7 @@
 #include "LteModem.h"
 #include "MqttHandler.h"
 #include "TrafficStats.h"
+#include "TrafficMonitor.h"
 #include "LoopGeometry.h"
 #include "PowerMonitor.h"
 #include "TimeManager.h"
@@ -60,10 +62,10 @@ VehicleDetector det[2][4] = {
     {VehicleDetector("S2C0"), VehicleDetector("S2C1"), VehicleDetector("S2C2"), VehicleDetector("S2C3")}};
 
 LoopConfig loopCfg[SPEED_PAIR_COUNT] = {
-    {false, 0.4f, 0, 0, 1, 0},
-    {false, 0.4f, 0, 1, 1, 1},
-    {false, 0.4f, 0, 2, 1, 2},
-    {false, 0.4f, 0, 3, 1, 3}};
+    {false, 0.4f, 0, 0, 0, 1},
+    {false, 0.4f, 0, 2, 0, 3},
+    {false, 0.4f, 1, 0, 1, 1},
+    {false, 0.4f, 1, 2, 1, 3}};
 SpeedPairState speedState[SPEED_PAIR_COUNT];
 
 SensorDataSnapshot latestData;
@@ -124,6 +126,15 @@ void sendTrafficReport(const char *msg)
 void wsLoop()
 {
   webSocket.loop();
+}
+
+static bool requireDashboardAuthentication()
+{
+  if (httpServer.authenticate(DASHBOARD_USER, DASHBOARD_PASSWORD))
+    return true;
+
+  httpServer.requestAuthentication(BASIC_AUTH, "LDC Dashboard");
+  return false;
 }
 
 // ============================================================
@@ -210,11 +221,13 @@ void setup()
   Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
 
   httpServer.on("/dev", []
-                { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
+                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
   httpServer.on("/tech", []
-                { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_TECH_HTML); });
+                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_TECH_HTML); });
+  httpServer.on("/setup", []
+                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_SETUP_HTML); });
   httpServer.on("/mqtt", []
-                { httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_MQTT_HTML); });
+                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_MQTT_HTML); });
   httpServer.on("/", []()
                 {
                   const char *idx =
@@ -224,6 +237,7 @@ void setup()
                     "<h1>LDC1614 Dashboards</h1>"
                     "<a href='/dev'>/dev &mdash; Engineer dashboard (sensors, detector, classification)</a>"
                     "<a href='/tech'>/tech &mdash; Technician dashboard (system/MQTT/LC/loop config)</a>"
+                    "<a href='/setup'>/setup &mdash; Device setup dashboard</a>"
                     "<a href='/mqtt'>/mqtt &mdash; MQTT monitor (live broker traffic & event log)</a>"
                     "</body></html>";
                   httpServer.send(200, "text/html; charset=utf-8", idx);
@@ -247,7 +261,10 @@ void setup()
 
   trafficStatsInit();
   trafficStatsSetReportSender(sendTrafficReport);
-  g_loopGeometry.loadDefaults();
+  // loadAllConfigs() has already restored geometry and speed-pair settings.
+  // Do not overwrite those persisted values with defaults at boot.
+  trafficMonitorSyncFromGeometry();
+  refreshDetectorLoopModes();
 
   powerMonitorInit();
   gnssInit();

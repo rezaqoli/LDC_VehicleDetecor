@@ -264,7 +264,7 @@ th { background: #eef3f8; }
 <div class="card" style="border-left: 4px solid #ffc107;">
   <h2>⏱️ Report Settings</h2>
   <div class="row">
-    <label>Interval (min):</label><input type="number" id="rpt_interval" value="20" step="1" min="0">
+    <label>Interval (min):</label><input type="number" id="rpt_interval" value="5" step="1" min="0">
     <button onclick="sendReportInterval()">Set Interval</button>
     <label>Auto Report:</label><select id="rpt_enable"><option value="1">ON</option><option value="0">OFF</option></select>
     <button onclick="sendReportEnable()">Apply</button>

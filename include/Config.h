@@ -4,6 +4,16 @@
 #pragma once
 #include <Arduino.h>
 
+// Override these at build time for deployed devices, for example with
+// -D DASHBOARD_USER=\"operator\" -D DASHBOARD_PASSWORD=\"a-unique-password\".
+// The defaults are intentionally only suitable for first-time local setup.
+#ifndef DASHBOARD_USER
+#define DASHBOARD_USER "admin"
+#endif
+#ifndef DASHBOARD_PASSWORD
+#define DASHBOARD_PASSWORD "change-me"
+#endif
+
 #define ESP32s3 1
 #ifdef ESP32s3 
 // ============================================================

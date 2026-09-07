@@ -525,11 +525,11 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
       PersistentConfig::saveDetectorConfigs();
     }
   }
-  else if (cmd.startsWith("RESET"))
+  else if (cmd == "RESET")
   {
     ESP.restart();
   }
-  else if (cmd.startsWith("GET_REPORT"))
+  else if (cmd == "GET_REPORT" || cmd.startsWith("GET_REPORT|"))
   {
     bool clear_after = false;
     int p_index = cmd.indexOf('|');
@@ -566,6 +566,7 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
       char msg[64];
       snprintf(msg, sizeof(msg), "REPORT_INTERVAL_ACK|%u", minutes);
       reply.send(num, msg);
+      PersistentConfig::saveReportConfig();
     }
     else
     {
@@ -612,14 +613,16 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
       return;
     }
     int count = parsePipeFloats(cmd.substring(p_index + 1), p, 8);
-    if (count >= 5)
+    if (count < 5)
     {
-      g_traffic_rules.speed_limit_kmh = p[0];
-      g_traffic_rules.speed_tolerance_kmh = p[1];
-      g_traffic_rules.min_follow_distance_m = p[2];
-      g_traffic_rules.min_headway_s = p[3];
-      g_traffic_rules.max_headway_ms = (uint32_t)p[4];
+      reply.send(num, "ERROR|Invalid_rules");
+      return;
     }
+    g_traffic_rules.speed_limit_kmh = p[0];
+    g_traffic_rules.speed_tolerance_kmh = p[1];
+    g_traffic_rules.min_follow_distance_m = p[2];
+    g_traffic_rules.min_headway_s = p[3];
+    g_traffic_rules.max_headway_ms = (uint32_t)p[4];
     if (count >= 7)
     {
       g_traffic_rules.min_straddle_overlap_ms = (uint32_t)p[5];

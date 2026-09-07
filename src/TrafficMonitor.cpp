@@ -19,7 +19,7 @@ static bool parseChannelId(const char *id, uint8_t &s, uint8_t &ch)
     for (int i = 0; id[i] != '\0' && i < 12; i++)
     {
         if ((id[i] == 'S' || id[i] == 's') && isdigit((unsigned char)id[i + 1]))
-            sensor = id[i + 1] - '0';
+            sensor = (id[i + 1] - '0') - 1; // S1/S2 map to internal 0/1.
 
         if ((id[i] == 'C' || id[i] == 'c') && isdigit((unsigned char)id[i + 1]))
             channel = id[i + 1] - '0';

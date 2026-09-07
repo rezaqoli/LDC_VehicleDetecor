@@ -137,7 +137,7 @@ th { background: #eef3f8; }
 <div class="card" style="border-left: 4px solid #ffc107;">
   <h2>⏱️ Report Settings</h2>
   <div class="row">
-    <label>Interval (min):</label><input type="number" id="rpt_interval" value="20" step="1" min="0">
+    <label>Interval (min):</label><input type="number" id="rpt_interval" value="5" step="1" min="0">
     <button onclick="sendCmd('SET_REPORT_INTERVAL|' + el('rpt_interval').value)">Set Interval</button>
     <label>Auto Report:</label><select id="rpt_enable"><option value="1">ON</option><option value="0">OFF</option></select>
     <button onclick="sendCmd('SET_REPORT_ENABLE|' + el('rpt_enable').value)">Apply</button>
@@ -169,22 +169,6 @@ th { background: #eef3f8; }
   <div id="eventLog" class="event-log">[System] Ready</div>
   <button onclick="el('eventLog').innerHTML='[System] Cleared'">Clear</button>
 </div>
-
-<div class="card" style="border-left: 4px solid #20c997;">
-  <h2>📡 MQTT Publish Stats</h2>
-  <div class="row">
-    <span class="kv">Published: <b id="mp_published">0</b></span>
-    <span class="kv">Dropped: <b id="mp_dropped">0</b></span>
-    <span class="kv">Reconnect: <b id="mp_reconnect">0</b></span>
-    <span class="kv">Last err: <b id="mp_err">none</b></span>
-  </div>
-  <div class="row" style="margin-top:8px;">
-    <button onclick="sendCmd('GET_MQTT_PUB_STATS')">Refresh</button>
-    <button onclick="sendCmd('RESET_MQTT_PUB_STATS')">Reset Counters</button>
-  </div>
-</div>
-
-
 
 <div class="card" style="border-left: 4px solid #0d6efd;">
   <h2>🕒 Time Sync</h2>
@@ -218,47 +202,6 @@ th { background: #eef3f8; }
     <button onclick="sendCmd('GPS_OFF')">Power Off</button>
   </div>
   <p class="small">GNSS is off by default. Press <b>Get Fix</b> to power the modem's GNSS on; it auto-powers off after 2 min of inactivity.</p>
-</div>
-
-<div class="card" style="border-left: 4px solid #fd7e14;">
-  <h2>📵 Detection Control</h2>
-  <div class="row">
-    <span class="kv">State: <b id="dc_state">RUNNING</b></span>
-  </div>
-  <div class="row" style="margin-top:8px;">
-    <button onclick="sendCmd('DETECTION_STOP')" style="background:#dc3545;">⏸ Pause Detection</button>
-    <button onclick="sendCmd('DETECTION_START')" class="ok">▶ Resume Detection</button>
-    <button onclick="sendCmd('GET_DETECTION_STATE')">Status</button>
-  </div>
-  <p class="small">While paused, the sensor pipeline keeps running (so the dashboard stays live) but no events, classifications, or speed matches are produced.</p>
-</div>
-
-<div class="card" style="border-left: 4px solid #198754;">
-  <h2>📱 SMS</h2>
-  <div class="row">
-    <span class="kv">Sent: <b id="sms_sent">0</b></span>
-    <span class="kv">Received: <b id="sms_rcvd">0</b></span>
-    <span class="kv">Unauthorised: <b id="sms_unauth">0</b></span>
-    <span class="kv">Last sender: <b id="sms_last">-</b></span>
-  </div>
-  <div class="row" style="margin-top:8px;">
-    <input type="text" id="sms_to" placeholder="+98..." style="min-width:120px">
-    <input type="text" id="sms_body" placeholder="message body" style="min-width:200px">
-    <button onclick="sendSms()">Send</button>
-  </div>
-  <div class="row" style="margin-top:6px;">
-    <button onclick="sendCmd('SMS_REPORT_POWER|'  + (el('sms_to').value || ''))">Report Power</button>
-    <button onclick="sendCmd('SMS_REPORT_GPS|'   + (el('sms_to').value || ''))">Report GPS</button>
-    <button onclick="sendCmd('GET_SMS_STATS')">Refresh Stats</button>
-  </div>
-  <div class="row" style="margin-top:6px;">
-    <input type="text" id="sms_new" placeholder="+98..." style="min-width:120px">
-    <button onclick="sendCmd('SMS_ADD_CONTACT|' + (el('sms_new').value || ''))">Add Contact</button>
-    <button onclick="sendCmd('SMS_DEL_CONTACT|' + (el('sms_new').value || ''))">Remove Contact</button>
-    <button onclick="sendCmd('SMS_LIST_CONTACTS')">List Contacts</button>
-  </div>
-  <div id="sms_contacts" class="small" style="margin-top:4px; font-family:monospace;">(no contacts yet)</div>
-  <p class="small">Incoming SMS are accepted only from whitelisted numbers, and the message body must start with the configured PIN (default <code>1234</code>) followed by a space. Supported commands: <code>STOP</code>, <code>START</code>, <code>STATUS</code>, <code>GET_POWER</code>, <code>GET_GPS</code>, <code>GET_TIME</code>, <code>SAVE_ALL</code>.</p>
 </div>
 
 <script>
@@ -325,13 +268,9 @@ function refreshAll(){
   sendCmd('GET_DEFAULT_KMH');
   sendCmd('GET_LOOP_GEOMETRY');
   sendCmd('GET_CPU');
-  sendCmd('GET_MQTT_PUB_STATS');
   sendCmd('GET_POWER');
   sendCmd('GET_TIME');
   sendCmd('GET_GPS_STATUS');
-  sendCmd('GET_DETECTION_STATE');
-  sendCmd('GET_SMS_STATS');
-  sendCmd('SMS_LIST_CONTACTS');
 }
 
 function parseKv(payload, sep) {
@@ -371,16 +310,20 @@ function sendLC(s, ch){
 function buildLpTable(){
   const tb = el('lpTbl');
   tb.innerHTML = '';
+  const defaults = [
+    [0, 0, 0, 1], [0, 2, 0, 3], [1, 0, 1, 1], [1, 2, 1, 3]
+  ];
   for (let i=0; i<4; i++){
+    const d = defaults[i];
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${i}</td>
       <td><select id="lp_${i}_en"><option value="1">ON</option><option value="0">OFF</option></select></td>
       <td><input type="number" id="lp_${i}_dist" value="0.4" step="0.1"></td>
-      <td><select id="lp_${i}_s1"><option value="0">S1</option><option value="1">S2</option></select></td>
-      <td><select id="lp_${i}_c1"><option>0</option><option>1</option><option>2</option><option>3</option></select></td>
-      <td><select id="lp_${i}_s2"><option value="0">S1</option><option value="1" selected>S2</option></select></td>
-      <td><select id="lp_${i}_c2"><option>0</option><option>1</option><option>2</option><option>3</option></select></td>
+      <td><select id="lp_${i}_s1"><option value="0" ${d[0]===0?'selected':''}>S1</option><option value="1" ${d[0]===1?'selected':''}>S2</option></select></td>
+      <td><select id="lp_${i}_c1">${[0,1,2,3].map(c=>`<option value="${c}" ${d[1]===c?'selected':''}>${c}</option>`).join('')}</select></td>
+      <td><select id="lp_${i}_s2"><option value="0" ${d[2]===0?'selected':''}>S1</option><option value="1" ${d[2]===1?'selected':''}>S2</option></select></td>
+      <td><select id="lp_${i}_c2">${[0,1,2,3].map(c=>`<option value="${c}" ${d[3]===c?'selected':''}>${c}</option>`).join('')}</select></td>
       <td id="lp_${i}_speed">-</td>
       <td><button class="ok" onclick="sendLp(${i})">💾 Apply</button></td>`;
     tb.appendChild(row);
