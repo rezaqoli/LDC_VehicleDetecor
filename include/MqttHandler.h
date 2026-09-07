@@ -4,7 +4,7 @@
 #define MQTT_ENABLE 1
 #define MQTT_MAX_PACKET_SIZE 4096
 #define MQTT_KEEPALIVE 60
-#define MQTT_PUB_PAYLOAD_MAX 320
+#define MQTT_PUB_PAYLOAD_MAX 512
 
 #include <PubSubClient.h>
 

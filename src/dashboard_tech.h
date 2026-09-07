@@ -190,6 +190,27 @@ th { background: #eef3f8; }
   </div>
 </div>
 
+<div class="card" style="border-left: 4px solid #6610f2;">
+  <h2>🛰️ GNSS / GPS</h2>
+  <div class="row">
+    <span class="kv">State: <b id="gnss_state">OFF</b></span>
+    <span class="kv">Lat: <b id="gnss_lat">-</b></span>
+    <span class="kv">Lon: <b id="gnss_lon">-</b></span>
+    <span class="kv">Alt: <b id="gnss_alt">-</b> m</span>
+    <span class="kv">Sats: <b id="gnss_sat">-</b></span>
+    <span class="kv">Accuracy: <b id="gnss_acc">-</b> m</span>
+    <span class="kv">Fix age: <b id="gnss_age">-</b> s</span>
+    <span class="kv">Speed: <b id="gnss_spd">-</b> km/h</span>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <button onclick="sendCmd('GET_GPS')">📍 Get Fix (8s)</button>
+    <button onclick="sendCmd('GET_GPS_STATUS')">Status</button>
+    <button onclick="sendCmd('GET_GPS_LAST')">Show Last</button>
+    <button onclick="sendCmd('GPS_OFF')">Power Off</button>
+  </div>
+  <p class="small">GNSS is off by default. Press <b>Get Fix</b> to power the modem's GNSS on; it auto-powers off after 2 min of inactivity.</p>
+</div>
+
 <script>
 let ws;
 const IP = window.location.hostname;
@@ -239,6 +260,7 @@ function refreshAll(){
   sendCmd('GET_MQTT_PUB_STATS');
   sendCmd('GET_POWER');
   sendCmd('GET_TIME');
+  sendCmd('GET_GPS_STATUS');
 }
 
 function parseKv(payload, sep) {
@@ -475,6 +497,32 @@ function handleMessage(d){
     if (v.iso    !== undefined) el('tm_iso').innerText    = v.iso || '-';
     if (v.epoch  !== undefined) el('tm_epoch').innerText  = v.epoch;
     if (v.last_sync !== undefined) el('tm_last').innerText = v.last_sync;
+  } else if (d.startsWith('GNSS|')) {
+    const v = parseKv(d.substring(5), '|');
+    if (v.state !== undefined) el('gnss_state').innerText = v.state;
+    if (v.lat   !== undefined) el('gnss_lat').innerText   = v.lat;
+    if (v.lon   !== undefined) el('gnss_lon').innerText   = v.lon;
+    if (v.alt   !== undefined) el('gnss_alt').innerText   = v.alt;
+    if (v.sat   !== undefined) el('gnss_sat').innerText   = v.sat;
+    if (v.acc   !== undefined) el('gnss_acc').innerText   = v.acc;
+    if (v.spd   !== undefined) el('gnss_spd').innerText   = v.spd;
+  } else if (d.startsWith('GNSS_LAST|')) {
+    const v = parseKv(d.substring(10), '|');
+    if (v.state !== undefined) el('gnss_state').innerText = v.state;
+    if (v.lat   !== undefined) el('gnss_lat').innerText   = v.lat;
+    if (v.lon   !== undefined) el('gnss_lon').innerText   = v.lon;
+    if (v.alt   !== undefined) el('gnss_alt').innerText   = v.alt;
+    if (v.sat   !== undefined) el('gnss_sat').innerText   = v.sat;
+    if (v.acc   !== undefined) el('gnss_acc').innerText   = v.acc;
+    if (v.spd   !== undefined) el('gnss_spd').innerText   = v.spd;
+    if (v.age_s !== undefined) el('gnss_age').innerText   = v.age_s;
+  } else if (d.startsWith('GNSS_STATUS|')) {
+    const v = parseKv(d.substring(12), '|');
+    if (v.state   !== undefined) el('gnss_state').innerText = v.state;
+    if (v.age_s   !== undefined) el('gnss_age').innerText   = v.age_s;
+  } else if (d.startsWith('GNSS_OFF_ACK')) {
+    el('gnss_state').innerText = 'OFF';
+    log('🛰️ GNSS powered off');
   } else {
     log('[Msg] ' + d);
   }
@@ -486,9 +534,11 @@ function startPowerAuto() {
   if (_powerAutoTimer) return;
   sendCmd('GET_POWER');
   sendCmd('GET_TIME');
+  sendCmd('GET_GPS_STATUS');
   _powerAutoTimer = setInterval(() => {
     sendCmd('GET_POWER');
     sendCmd('GET_TIME');
+    sendCmd('GET_GPS_STATUS');
   }, 2000);
 }
 function stopPowerAuto() {

@@ -1,5 +1,7 @@
 #include "LteModem.h"
 #include "WsUtils.h"
+#include <cstring>
+#include <ctime>
 
 char lte_apn[32] = "shatelmobile";
 
@@ -369,6 +371,151 @@ void taskLTECommandConsole(void *)
       Serial.println("  LTE_INFO     - Show modem identity");
       Serial.println("  HELP_LTE     - Show this help");
       Serial.println();
+    }
+  }
+}
+
+// ============================================================
+// GNSS (EC200U built-in)  —  lazy, on-demand, auto power-off
+// ============================================================
+static volatile GnssState s_gnssState      = GnssState::OFF;
+static volatile uint32_t  s_gnssLastReqMs  = 0;
+static GnssFix            s_gnssLastFix    = {};
+
+void gnssInit()
+{
+  s_gnssState     = GnssState::OFF;
+  s_gnssLastReqMs = 0;
+  memset(&s_gnssLastFix, 0, sizeof(s_gnssLastFix));
+}
+
+GnssState gnssGetState()             { return s_gnssState; }
+uint32_t  gnssGetLastRequestMs()     { return s_gnssLastReqMs; }
+const GnssFix &gnssGetLastFix()      { return s_gnssLastFix; }
+
+static const uint32_t GNSS_FIX_TIMEOUT_MS = 8000UL;
+
+static void gnssFormatUtcTimestamp(char *buf, size_t len)
+{
+  time_t now = time(nullptr);
+  if (now > 1609459200L)
+  {
+    struct tm ti;
+    gmtime_r(&now, &ti);
+    strftime(buf, len, "%Y-%m-%dT%H:%M:%SZ", &ti);
+  }
+  else
+  {
+    snprintf(buf, len, "BOOT+%lu", (unsigned long)millis());
+  }
+}
+
+bool gnssGetFix(GnssFix &out)
+{
+  out = {};
+  s_gnssLastReqMs = millis();
+
+  if (!lteInitialized)
+  {
+    Serial.println("[GNSS] Modem not initialised");
+    return false;
+  }
+
+  // Lazy power-on
+  if (s_gnssState == GnssState::OFF)
+  {
+    Serial.println("[GNSS] Powering on (lazy enable)...");
+    if (!takeModem(10000))
+    {
+      Serial.println("[GNSS] Modem busy for enable");
+      return false;
+    }
+    bool ok = modem.enableGPS();
+    giveModem();
+    if (!ok)
+    {
+      Serial.println("[GNSS] enableGPS() returned false");
+      return false;
+    }
+    s_gnssState = GnssState::STARTING;
+  }
+
+  // Single 8 s fix attempt.  modem.getGPS() blocks the UART.
+  if (!takeModem(GNSS_FIX_TIMEOUT_MS + 1000))
+  {
+    Serial.println("[GNSS] Modem busy for fix");
+    return false;
+  }
+
+  float    lat = 0, lon = 0, speed = 0, alt = 0, acc = 0;
+  int      vsat = 0, usat = 0;
+  int      year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+
+  bool ok = modem.getGPS(&lat, &lon, &speed, &alt,
+                          &vsat, &usat, &acc,
+                          &year, &month, &day,
+                          &hour, &minute, &second);
+  giveModem();
+
+  if (!ok)
+  {
+    Serial.println("[GNSS] No fix yet (cold start or no satellites)");
+    return false;
+  }
+
+  out.valid         = true;
+  out.latitude      = lat;
+  out.longitude     = lon;
+  out.altitude_m    = alt;
+  out.speed_kmh     = speed;
+  out.satellites    = (usat > 0) ? (uint8_t)usat : (uint8_t)vsat;
+  out.accuracy_m    = acc;
+  out.sampled_at_ms = millis();
+
+  // Prefer the modem's own time (UTC) if it produced it.
+  if (year > 2000)
+  {
+    snprintf(out.timestamp, sizeof(out.timestamp),
+             "%04d-%02d-%02dT%02d:%02d:%02dZ",
+             year, month, day, hour, minute, second);
+  }
+  else
+  {
+    gnssFormatUtcTimestamp(out.timestamp, sizeof(out.timestamp));
+  }
+
+  s_gnssLastFix = out;
+  s_gnssState   = GnssState::RUNNING;
+
+  Serial.printf("[GNSS] Fix: %.5f, %.5f alt=%.0fm spd=%.1fkmh sats=%u acc=%.0fm %s\n",
+                lat, lon, alt, speed, out.satellites, acc, out.timestamp);
+  return true;
+}
+
+void gnssShutdown()
+{
+  if (s_gnssState == GnssState::OFF) return;
+  Serial.println("[GNSS] Powering down");
+  if (takeModem(5000))
+  {
+    modem.disableGPS();
+    giveModem();
+  }
+  s_gnssState = GnssState::OFF;
+}
+
+void taskGnssIdleWatcher(void *)
+{
+  Serial.println("[GNSS] Idle watcher started");
+  for (;;)
+  {
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    if (s_gnssState == GnssState::OFF) continue;
+    if (s_gnssLastReqMs == 0)        continue;
+    if ((millis() - s_gnssLastReqMs) > GNSS_IDLE_MS)
+    {
+      Serial.println("[GNSS] Idle timeout — auto power-off");
+      gnssShutdown();
     }
   }
 }

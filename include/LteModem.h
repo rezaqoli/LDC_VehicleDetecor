@@ -17,6 +17,41 @@ void giveModem();
 bool modemMutexReady();
 void modemMutexInit();
 
+// ============================================================
+// GNSS (EC200U built-in).  OFF by default — powers on only
+// when gnssGetFix() / GET_GPS is called, and auto-powers off
+// after GNSS_IDLE_MS of inactivity.
+// ============================================================
+#define GNSS_IDLE_MS 120000UL
+
+struct GnssFix
+{
+  bool     valid;
+  float    latitude;
+  float    longitude;
+  float    altitude_m;
+  float    speed_kmh;
+  uint8_t  satellites;
+  float    accuracy_m;
+  char     timestamp[32];
+  uint32_t sampled_at_ms;
+};
+
+enum class GnssState : uint8_t
+{
+  OFF      = 0,
+  STARTING = 1,
+  RUNNING  = 2,
+};
+
+void          gnssInit();
+const GnssFix &gnssGetLastFix();
+GnssState      gnssGetState();
+uint32_t       gnssGetLastRequestMs();
+bool           gnssGetFix(GnssFix &out);
+void           gnssShutdown();
+
 void taskLTEInit(void *);
 void taskLTEStatusMonitor(void *);
 void taskLTECommandConsole(void *);
+void taskGnssIdleWatcher(void *);

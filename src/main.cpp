@@ -248,6 +248,7 @@ void setup()
   g_loopGeometry.loadDefaults();
 
   powerMonitorInit();
+  gnssInit();
 
   if (!rawQueue || !eventQueue || !freeEventQueue || !wsTxQueue || !freeWsMsgQueue || !i2c0Mutex || !i2c1Mutex || !wsMutex || !dataMutex)
   {
@@ -280,6 +281,7 @@ void setup()
       xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 1, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskGnssIdleWatcher,  "GNSS",    3072, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 6, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 5, NULL, 1) != pdPASS ||

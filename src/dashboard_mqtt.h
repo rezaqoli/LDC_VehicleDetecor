@@ -192,6 +192,7 @@ function handleMessage(d){
     || d.startsWith('TRAFFIC_REPORT')
     || d.startsWith('SPEED|') || d.startsWith('SPEED_STATE|')
     || d.startsWith('MQTT_')
+    || d.startsWith('GNSS_')
     || d.startsWith('CONFIG_ACK')
     || d.startsWith('RULES_ACK')
     || d.startsWith('REPORT_')

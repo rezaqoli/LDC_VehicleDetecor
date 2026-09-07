@@ -903,6 +903,71 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
              (unsigned long)millis());
     reply.send(num, msg);
   }
+  else if (cmd == "GET_GPS")
+  {
+    GnssFix fix;
+    if (gnssGetFix(fix))
+    {
+      char msg[256];
+      snprintf(msg, sizeof(msg),
+               "GNSS|valid:1|state:RUNNING|lat:%.5f|lon:%.5f|alt:%.0f|spd:%.1f|sat:%u|acc:%.0f|ts:%s",
+               fix.latitude, fix.longitude, fix.altitude_m, fix.speed_kmh,
+               fix.satellites, fix.accuracy_m, fix.timestamp);
+      reply.send(num, msg);
+    }
+    else
+    {
+      const char *state_str =
+        (gnssGetState() == GnssState::STARTING) ? "STARTING" : "OFF";
+      char msg[96];
+      snprintf(msg, sizeof(msg), "GNSS|valid:0|state:%s|reason:no_fix_yet", state_str);
+      reply.send(num, msg);
+    }
+  }
+  else if (cmd == "GET_GPS_LAST")
+  {
+    const GnssFix &fix = gnssGetLastFix();
+    uint32_t age_s = fix.valid ? ((millis() - fix.sampled_at_ms) / 1000UL) : 0;
+    const char *state_str =
+      (gnssGetState() == GnssState::OFF)      ? "OFF"
+    : (gnssGetState() == GnssState::STARTING) ? "STARTING"
+                                              : "RUNNING";
+    char msg[256];
+    if (fix.valid)
+    {
+      snprintf(msg, sizeof(msg),
+               "GNSS_LAST|valid:1|state:%s|lat:%.5f|lon:%.5f|alt:%.0f|spd:%.1f|sat:%u|acc:%.0f|age_s:%lu|ts:%s",
+               state_str, fix.latitude, fix.longitude, fix.altitude_m, fix.speed_kmh,
+               fix.satellites, fix.accuracy_m, (unsigned long)age_s, fix.timestamp);
+    }
+    else
+    {
+      snprintf(msg, sizeof(msg), "GNSS_LAST|valid:0|state:%s|age_s:%lu",
+               state_str, (unsigned long)age_s);
+    }
+    reply.send(num, msg);
+  }
+  else if (cmd == "GET_GPS_STATUS")
+  {
+    const GnssFix &fix = gnssGetLastFix();
+    uint32_t age_s = fix.valid ? ((millis() - fix.sampled_at_ms) / 1000UL) : 0;
+    const char *state_str =
+      (gnssGetState() == GnssState::OFF)      ? "OFF"
+    : (gnssGetState() == GnssState::STARTING) ? "STARTING"
+                                              : "RUNNING";
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "GNSS_STATUS|state:%s|has_fix:%d|age_s:%lu|idle_ms:%lu",
+             state_str, fix.valid ? 1 : 0,
+             (unsigned long)age_s,
+             (unsigned long)(gnssGetLastRequestMs() ? (millis() - gnssGetLastRequestMs()) : 0));
+    reply.send(num, msg);
+  }
+  else if (cmd == "GPS_OFF")
+  {
+    gnssShutdown();
+    reply.send(num, "GNSS_OFF_ACK");
+  }
 }
 
 // ============================================================
