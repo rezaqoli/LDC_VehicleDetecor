@@ -211,6 +211,47 @@ th { background: #eef3f8; }
   <p class="small">GNSS is off by default. Press <b>Get Fix</b> to power the modem's GNSS on; it auto-powers off after 2 min of inactivity.</p>
 </div>
 
+<div class="card" style="border-left: 4px solid #fd7e14;">
+  <h2>📵 Detection Control</h2>
+  <div class="row">
+    <span class="kv">State: <b id="dc_state">RUNNING</b></span>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <button onclick="sendCmd('DETECTION_STOP')" style="background:#dc3545;">⏸ Pause Detection</button>
+    <button onclick="sendCmd('DETECTION_START')" class="ok">▶ Resume Detection</button>
+    <button onclick="sendCmd('GET_DETECTION_STATE')">Status</button>
+  </div>
+  <p class="small">While paused, the sensor pipeline keeps running (so the dashboard stays live) but no events, classifications, or speed matches are produced.</p>
+</div>
+
+<div class="card" style="border-left: 4px solid #198754;">
+  <h2>📱 SMS</h2>
+  <div class="row">
+    <span class="kv">Sent: <b id="sms_sent">0</b></span>
+    <span class="kv">Received: <b id="sms_rcvd">0</b></span>
+    <span class="kv">Unauthorised: <b id="sms_unauth">0</b></span>
+    <span class="kv">Last sender: <b id="sms_last">-</b></span>
+  </div>
+  <div class="row" style="margin-top:8px;">
+    <input type="text" id="sms_to" placeholder="+98..." style="min-width:120px">
+    <input type="text" id="sms_body" placeholder="message body" style="min-width:200px">
+    <button onclick="sendSms()">Send</button>
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <button onclick="sendCmd('SMS_REPORT_POWER|'  + (el('sms_to').value || ''))">Report Power</button>
+    <button onclick="sendCmd('SMS_REPORT_GPS|'   + (el('sms_to').value || ''))">Report GPS</button>
+    <button onclick="sendCmd('GET_SMS_STATS')">Refresh Stats</button>
+  </div>
+  <div class="row" style="margin-top:6px;">
+    <input type="text" id="sms_new" placeholder="+98..." style="min-width:120px">
+    <button onclick="sendCmd('SMS_ADD_CONTACT|' + (el('sms_new').value || ''))">Add Contact</button>
+    <button onclick="sendCmd('SMS_DEL_CONTACT|' + (el('sms_new').value || ''))">Remove Contact</button>
+    <button onclick="sendCmd('SMS_LIST_CONTACTS')">List Contacts</button>
+  </div>
+  <div id="sms_contacts" class="small" style="margin-top:4px; font-family:monospace;">(no contacts yet)</div>
+  <p class="small">Incoming SMS are accepted only from whitelisted numbers, and the message body must start with the configured PIN (default <code>1234</code>) followed by a space. Supported commands: <code>STOP</code>, <code>START</code>, <code>STATUS</code>, <code>GET_POWER</code>, <code>GET_GPS</code>, <code>GET_TIME</code>, <code>SAVE_ALL</code>.</p>
+</div>
+
 <script>
 let ws;
 const IP = window.location.hostname;
@@ -261,6 +302,9 @@ function refreshAll(){
   sendCmd('GET_POWER');
   sendCmd('GET_TIME');
   sendCmd('GET_GPS_STATUS');
+  sendCmd('GET_DETECTION_STATE');
+  sendCmd('GET_SMS_STATS');
+  sendCmd('SMS_LIST_CONTACTS');
 }
 
 function parseKv(payload, sep) {
@@ -523,6 +567,43 @@ function handleMessage(d){
   } else if (d.startsWith('GNSS_OFF_ACK')) {
     el('gnss_state').innerText = 'OFF';
     log('🛰️ GNSS powered off');
+  } else if (d.startsWith('DETECTION_STATE|') || d.startsWith('DETECTION_ACK|')) {
+    const v = parseKv(d.substring(d.indexOf('|') + 1), '|');
+    if (v.state !== undefined) {
+      el('dc_state').innerText = v.state;
+      el('dc_state').style.color = (v.state === 'PAUSED') ? '#dc3545' : '#198754';
+    }
+    if (v.paused !== undefined) {
+      el('dc_state').innerText = (v.paused === '1') ? 'PAUSED' : 'RUNNING';
+      el('dc_state').style.color = (v.paused === '1') ? '#dc3545' : '#198754';
+    }
+  } else if (d.startsWith('DETECTION|')) {
+    const v = parseKv(d.substring(10), '|');
+    if (v.paused !== undefined) {
+      el('dc_state').innerText = (v.paused === '1') ? 'PAUSED' : 'RUNNING';
+      el('dc_state').style.color = (v.paused === '1') ? '#dc3545' : '#198754';
+    }
+    log('Detection state changed: ' + d);
+  } else if (d.startsWith('SMS_ACK|')) {
+    const v = parseKv(d.substring(9), '|');
+    log('📱 SMS: ' + (v.ok !== undefined ? 'ok' : (v.err || 'unknown') + (v.sent !== undefined ? ' (sent)' : '')));
+  } else if (d.startsWith('SMS_CONTACTS|')) {
+    const v = parseKv(d.substring(13), '|');
+    if (v.cnt !== undefined) {
+      const parts = d.split('|');
+      const list = parts.slice(2).filter(x => x && x !== 'err:full' && x !== 'err:not_found' && x !== 'added' && x !== 'removed');
+      el('sms_contacts').innerText = list.length
+        ? 'Contacts (' + list.length + '): ' + list.join(', ')
+        : '(no contacts yet)';
+    }
+  } else if (d.startsWith('SMS_STATS|')) {
+    const v = parseKv(d.substring(10), '|');
+    if (v.sent !== undefined) el('sms_sent').innerText = v.sent;
+    if (v.received !== undefined) el('sms_rcvd').innerText = v.received;
+    if (v.unauthorized !== undefined) el('sms_unauth').innerText = v.unauthorized;
+    if (v.last_sender !== undefined) el('sms_last').innerText = v.last_sender;
+  } else if (d.startsWith('SMS|from:')) {
+    log(d);
   } else {
     log('[Msg] ' + d);
   }
@@ -535,11 +616,23 @@ function startPowerAuto() {
   sendCmd('GET_POWER');
   sendCmd('GET_TIME');
   sendCmd('GET_GPS_STATUS');
+  sendCmd('GET_DETECTION_STATE');
+  sendCmd('GET_SMS_STATS');
   _powerAutoTimer = setInterval(() => {
     sendCmd('GET_POWER');
     sendCmd('GET_TIME');
     sendCmd('GET_GPS_STATUS');
+    sendCmd('GET_DETECTION_STATE');
+    sendCmd('GET_SMS_STATS');
   }, 2000);
+}
+
+function sendSms() {
+  const to = el('sms_to').value.trim();
+  const body = el('sms_body').value;
+  if (!to || !body) { log('[SMS] number and body required'); return; }
+  sendCmd('SMS_SEND|' + to + '|' + body);
+  el('sms_body').value = '';
 }
 function stopPowerAuto() {
   if (_powerAutoTimer) { clearInterval(_powerAutoTimer); _powerAutoTimer = null; }

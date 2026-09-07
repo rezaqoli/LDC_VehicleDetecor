@@ -12,3 +12,4 @@ void taskStatsReporter(void *);
 void taskPowerMonitor(void *);
 void taskTimeSync(void *);
 void taskGnssIdleWatcher(void *);
+void taskSmsService(void *);

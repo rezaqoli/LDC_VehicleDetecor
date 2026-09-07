@@ -6,6 +6,7 @@
 #include "WsUtils.h"
 #include "esp_timer.h"
 #include "TrafficStats.h"
+#include "DetectionControl.h"
 #include "TrafficMonitor.h"
 #include "MqttHandler.h"
 
@@ -115,6 +116,11 @@ void taskDetector(void *)
   {
     if (xQueueReceive(rawQueue, &frame, pdMS_TO_TICKS(10)) == pdTRUE)
     {
+      if (g_detectionPaused)
+      {
+        // Paused: drop the frame so the queue doesn't grow.
+        continue;
+      }
       for (int s = 0; s < 2; s++)
       {
         for (int ch = 0; ch < 4; ch++)
@@ -204,6 +210,12 @@ void taskSpeedMatch(void *)
     EventResult *ev = nullptr;
     if (xQueueReceive(eventQueue, &ev, pdMS_TO_TICKS(20)) == pdTRUE)
     {
+      if (g_detectionPaused)
+      {
+        // Paused: don't process events; release the slot and skip.
+        releaseEventSlot(ev);
+        continue;
+      }
       uint8_t matchCount = 0;
       for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
       {

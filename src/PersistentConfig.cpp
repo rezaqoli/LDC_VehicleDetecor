@@ -797,6 +797,21 @@ bool PersistentConfig::loadLoopGeometry()
 }
 
 // ============================================================
+// SMS contact whitelist (pipe-delimited, max 256 bytes)
+// ============================================================
+bool PersistentConfig::saveSmsContacts(const char *joined)
+{
+    if (!joined) return false;
+    return setString("sms_contacts", joined);
+}
+
+bool PersistentConfig::loadSmsContacts(char *out, size_t maxLen)
+{
+    if (!out || maxLen == 0) return false;
+    return getString("sms_contacts", out, maxLen, "");
+}
+
+// ============================================================
 // Convenience methods
 // ============================================================
 bool PersistentConfig::saveAllConfigs()

@@ -13,6 +13,8 @@
 #include "TimeManager.h"
 #include "MqttHandler.h"
 #include "LteModem.h"
+#include "DetectionControl.h"
+#include "SmsManager.h"
 #include "cstring"
 
 namespace
@@ -967,6 +969,108 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
   {
     gnssShutdown();
     reply.send(num, "GNSS_OFF_ACK");
+  }
+  else if (cmd == "DETECTION_STOP")
+  {
+    detectionSetPaused(true);
+    mqttPublishEvent("DETECTION|paused:1|by:ws");
+    reply.send(num, "DETECTION_ACK|paused:1");
+  }
+  else if (cmd == "DETECTION_START")
+  {
+    detectionSetPaused(false);
+    mqttPublishEvent("DETECTION|paused:0|by:ws");
+    reply.send(num, "DETECTION_ACK|paused:0");
+  }
+  else if (cmd == "GET_DETECTION_STATE")
+  {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "DETECTION_STATE|state:%s|paused:%d",
+             detectionStateName(), detectionIsPaused() ? 1 : 0);
+    reply.send(num, msg);
+  }
+  else if (cmd == "SMS_SEND")
+  {
+    // SMS_SEND|<number>|<body...>
+    int p1 = cmd.indexOf('|', 9);
+    if (p1 < 0) { reply.send(num, "SMS_ACK|err:bad_format"); }
+    else
+    {
+      String phone = cmd.substring(9, p1);
+      String body  = cmd.substring(p1 + 1);
+      bool ok = smsSend(phone.c_str(), body.c_str());
+      reply.send(num, ok ? "SMS_ACK|ok" : "SMS_ACK|err:send_failed");
+    }
+  }
+  else if (cmd == "SMS_REPORT_POWER")
+  {
+    // SMS_REPORT_POWER|<number>
+    int p1 = cmd.indexOf('|', 16);
+    if (p1 > 0)
+    {
+      String phone = cmd.substring(16);
+      const PowerReadings &p = powerMonitorGet();
+      char msg[96];
+      snprintf(msg, sizeof(msg), "BAT:%.2fV SOL:%.2fV %s",
+               p.battery_v, p.solar_v, p.battery_low ? "LOW" : "OK");
+      bool ok = smsSend(phone.c_str(), msg);
+      reply.send(num, ok ? "SMS_ACK|ok" : "SMS_ACK|err:send_failed");
+    }
+    else reply.send(num, "SMS_ACK|err:bad_format");
+  }
+  else if (cmd == "SMS_REPORT_GPS")
+  {
+    int p1 = cmd.indexOf('|', 15);
+    if (p1 > 0)
+    {
+      String phone = cmd.substring(15);
+      GnssFix fix;
+      if (gnssGetFix(fix))
+      {
+        char msg[160];
+        snprintf(msg, sizeof(msg),
+                 "LAT:%.5f LON:%.5f ALT:%.0fm SATS:%u",
+                 fix.latitude, fix.longitude, fix.altitude_m, fix.satellites);
+        smsSend(phone.c_str(), msg);
+      }
+      reply.send(num, "SMS_ACK|sent");
+    }
+    else reply.send(num, "SMS_ACK|err:bad_format");
+  }
+  else if (cmd.startsWith("SMS_ADD_CONTACT|"))
+  {
+    String phone = cmd.substring(16);
+    bool ok = smsAddContact(phone.c_str());
+    reply.send(num, ok ? "SMS_CONTACTS|added" : "SMS_CONTACTS|err:full");
+  }
+  else if (cmd.startsWith("SMS_DEL_CONTACT|"))
+  {
+    String phone = cmd.substring(16);
+    bool ok = smsDelContact(phone.c_str());
+    reply.send(num, ok ? "SMS_CONTACTS|removed" : "SMS_CONTACTS|err:not_found");
+  }
+  else if (cmd == "SMS_LIST_CONTACTS")
+  {
+    String out = "SMS_CONTACTS|cnt:" + String((int)smsContactCount());
+    for (size_t i = 0; ; i++)
+    {
+      const char *c = smsGetContact(i);
+      if (!c) break;
+      out += "|";
+      out += c;
+    }
+    reply.send(num, out.c_str());
+  }
+  else if (cmd == "GET_SMS_STATS")
+  {
+    char msg[160];
+    snprintf(msg, sizeof(msg),
+             "SMS_STATS|sent:%lu|received:%lu|unauthorized:%lu|last_sender:%s",
+             (unsigned long)smsSentCount(),
+             (unsigned long)smsRcvdCount(),
+             (unsigned long)smsUnauthorizedCount(),
+             smsLastSender()[0] ? smsLastSender() : "none");
+    reply.send(num, msg);
   }
 }
 

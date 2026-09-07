@@ -56,6 +56,10 @@ class PersistentConfig
         static bool saveLoopGeometry();
         static bool loadLoopGeometry();
 
+        // SMS contact whitelist (pipe-delimited, max 256 bytes)
+        static bool saveSmsContacts(const char *joined);
+        static bool loadSmsContacts(char *out, size_t maxLen);
+
         // Convenience
         static bool saveAllConfigs();
         static bool loadAllConfigs();
