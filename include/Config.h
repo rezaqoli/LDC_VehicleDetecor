@@ -14,6 +14,10 @@
 #define DASHBOARD_PASSWORD "change-me"
 #endif
 
+#ifndef DEVICE_HOSTNAME
+#define DEVICE_HOSTNAME "esp-detector"
+#endif
+
 #define ESP32s3 1
 #ifdef ESP32s3 
 // ============================================================

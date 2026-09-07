@@ -22,6 +22,7 @@ char mqttTopicCommandResponses[64] = "vehicles/command_responses";
 static char s_topicEventsBoard[96]    = "vehicles/events";
 static char s_topicCommandsBoard[96]  = "vehicles/commands";
 static char s_topicResponsesBoard[96] = "vehicles/command_responses";
+static constexpr const char *s_topicResponsesGlobal = "vehicles/command_responses";
 static char s_lastCmdId[24]           = "";
 static bool s_boardIdAnnounced        = false;
 
@@ -324,8 +325,14 @@ static void mqttPublishResponseInternal(const char *payload)
   if (mqttClient.connected())
   {
     bool okPerBoard = mqttPublishLocked(s_topicResponsesBoard, payload);
-    bool okGlobal   = mqttPublishLocked(mqttTopicCommandResponses, payload);
-    if (okPerBoard || okGlobal)
+    // Always publish the legacy/global response lane. This is required when a
+    // command arrived on vehicles/commands and lets fleet tools receive the
+    // response even when they do not know the board-specific topic yet.
+    bool okGlobal   = mqttPublishLocked(s_topicResponsesGlobal, payload);
+    bool okConfigured = okGlobal;
+    if (mqttTopicCommandResponses[0] && strcmp(mqttTopicCommandResponses, s_topicResponsesGlobal) != 0)
+      okConfigured = mqttPublishLocked(mqttTopicCommandResponses, payload);
+    if (okPerBoard || okGlobal || okConfigured)
     {
       Serial.printf("[MQTT] Published response (%d bytes)\n", (int)strlen(payload));
       mqttPubPublishedRsp++;

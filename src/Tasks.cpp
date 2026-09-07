@@ -9,6 +9,7 @@
 #include "DetectionControl.h"
 #include "TrafficMonitor.h"
 #include "MqttHandler.h"
+#include <ESPmDNS.h>
 
 const u8_t LedSensors[8] = {LEDs1, LEDs2, LEDs3, LEDs4, LEDs5, LEDs6, LEDs7, LEDs8 };
 // ============================================================
@@ -338,8 +339,23 @@ void taskSpeedMatch(void *)
 // ============================================================
 void taskWebServer(void *)
 {
+  bool mdnsStarted = false;
   while (true)
   {
+    if (!mdnsStarted && WiFi.status() == WL_CONNECTED)
+    {
+      if (MDNS.begin(DEVICE_HOSTNAME))
+      {
+        MDNS.addService("http", "tcp", 80);
+        MDNS.addService("ws", "tcp", 81);
+        mdnsStarted = true;
+        Serial.printf("[WiFi] mDNS active: http://%s.local/\n", DEVICE_HOSTNAME);
+      }
+      else
+      {
+        Serial.printf("[WiFi] mDNS start failed for %s.local\n", DEVICE_HOSTNAME);
+      }
+    }
     httpServer.handleClient();
     vTaskDelay(pdMS_TO_TICKS(10));
   }

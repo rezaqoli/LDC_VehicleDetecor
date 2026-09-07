@@ -4,6 +4,7 @@
 #include <Arduino.h>
 #include "PersistentConfig.h"
 #include <WiFi.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <WebSocketsServer_Generic.h>
 #include <SoftWire.h>
@@ -217,9 +218,11 @@ void setup()
   IPAddress gateway(192, 168, 100, 1);
   IPAddress subnet(255, 255, 255, 0);
   WiFi.config(ip, gateway, subnet);
+  WiFi.setHostname(DEVICE_HOSTNAME);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
   Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("[WiFi] mDNS hostname: %s.local\n", DEVICE_HOSTNAME);
 
   httpServer.on("/dev", []
                 { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });

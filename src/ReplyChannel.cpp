@@ -29,9 +29,10 @@ class MqttReplyChannel : public IReplyChannel
       // can correlate each reply with the CMD that triggered it.
       snprintf(envelope, sizeof(envelope), "RSP|%s|%s", cmdId, msg);
       mqttPublishResponseTo(mqttTopicResponsesBoard(), envelope);
-      // Global lane: publish the bare reply for backward compatibility
-      // with any tool/dashboard that subscribes to vehicles/command_responses.
-      mqttPublishResponse(msg);
+      // Global lane: publish the correlated envelope as well. This allows a
+      // fleet dashboard to map a response received on the global topic back
+      // to the board that originated the command.
+      mqttPublishResponseTo("vehicles/command_responses", envelope);
     }
     else
     {

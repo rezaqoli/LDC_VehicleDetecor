@@ -96,7 +96,9 @@ namespace
 
     char host[96], path[160];
     uint16_t port = 0;
-    TinyGsmClient client(modem);
+    // Keep MQTT on its existing socket and use another modem mux channel for
+    // the firmware HTTP stream. The mutex is released between chunks below.
+    TinyGsmClient client(modem, 1);
     bool updateStarted = false;
 
     if (!parseUrl(request.url, host, sizeof(host), port, path, sizeof(path)))
@@ -123,8 +125,8 @@ namespace
     bool ok = client.connect(host, port, 30);
     if (!ok)
     {
-      report("OTA_ERROR|download_connect_failed");
       giveModem();
+      report("OTA_ERROR|download_connect_failed");
       s_running = false;
       vTaskDelete(nullptr);
       return;
@@ -135,8 +137,8 @@ namespace
     if (!readHeaderLine(client, line, sizeof(line)) || strncmp(line, "HTTP/1.1 200", 12) != 0)
     {
       client.stop();
-      report("OTA_ERROR|http_status_not_200");
       giveModem();
+      report("OTA_ERROR|http_status_not_200");
       s_running = false;
       vTaskDelete(nullptr);
       return;
@@ -148,11 +150,13 @@ namespace
       if (strncasecmp(line, "Content-Length:", 15) == 0)
         contentLength = strtol(line + 15, nullptr, 10);
     }
+    // No modem operation is performed while validating the size or preparing
+    // the flash update. Other tasks may use the modem from this point onward.
+    giveModem();
     if (contentLength <= 0 || (uint32_t)contentLength > OTA_MAX_IMAGE)
     {
-      client.stop();
+      if (takeModem(2000)) { client.stop(); giveModem(); }
       report("OTA_ERROR|invalid_image_size");
-      giveModem();
       s_running = false;
       vTaskDelete(nullptr);
       return;
@@ -160,18 +164,16 @@ namespace
 
     if (request.md5[0] && !Update.setMD5(request.md5))
     {
-      client.stop();
+      if (takeModem(2000)) { client.stop(); giveModem(); }
       report("OTA_ERROR|invalid_md5");
-      giveModem();
       s_running = false;
       vTaskDelete(nullptr);
       return;
     }
     if (!Update.begin((size_t)contentLength))
     {
-      client.stop();
+      if (takeModem(2000)) { client.stop(); giveModem(); }
       report("OTA_ERROR|flash_begin_failed");
-      giveModem();
       s_running = false;
       vTaskDelete(nullptr);
       return;
@@ -183,18 +185,31 @@ namespace
     uint32_t lastReport = 0;
     while (received < contentLength)
     {
+      if (!takeModem(2000))
+      {
+        report("OTA_ERROR|modem_busy_during_download");
+        break;
+      }
       int available = client.available();
       if (available <= 0)
       {
-        if (!client.connected()) break;
+        bool connected = client.connected();
+        giveModem();
+        if (!connected) break;
         delay(2);
         continue;
       }
       size_t want = (size_t)available;
       if (want > sizeof(buffer)) want = sizeof(buffer);
       int read = client.read(buffer, want);
-      if (read <= 0) break;
-      if (Update.write(buffer, (size_t)read) != (size_t)read) break;
+      if (read <= 0)
+      {
+        giveModem();
+        break;
+      }
+      size_t written = Update.write(buffer, (size_t)read);
+      giveModem();
+      if (written != (size_t)read) break;
       received += read;
       if (millis() - lastReport > 2000)
       {
@@ -204,21 +219,19 @@ namespace
         report(progress);
       }
     }
-    client.stop();
+    if (takeModem(2000)) { client.stop(); giveModem(); }
 
     bool success = updateStarted && received == contentLength && Update.end();
     if (!success)
     {
       if (updateStarted) Update.abort();
       report(received == contentLength ? "OTA_ERROR|image_validation_failed" : "OTA_ERROR|incomplete_download");
-      giveModem();
       s_running = false;
       vTaskDelete(nullptr);
       return;
     }
 
     report("OTA_SUCCESS|rebooting");
-    giveModem();
     delay(2000);
     ESP.restart();
   }
