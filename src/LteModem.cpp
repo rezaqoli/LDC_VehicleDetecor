@@ -145,9 +145,9 @@ static void hardwareResetModem()
   Serial.println("[LTE] Hardware-resetting modem (MODEM_RESET_PIN)...");
   wsSend("[LTE] Hardware-resetting modem (MODEM_RESET_PIN)...");
   digitalWrite(MODEM_RESET_PIN, LOW);
-  delay(300);
+  vTaskDelay(pdMS_TO_TICKS(300));
   digitalWrite(MODEM_RESET_PIN, HIGH);
-  delay(3000);
+  vTaskDelay(pdMS_TO_TICKS(3000));
   lteInitialized = false;
   lteGprsConnected = false;
 }
@@ -163,7 +163,7 @@ static void softResetDataConnection()
   // Bring the PDP context down and back up. Falls back to hardware reset on
   // repeated failure (handled in the status monitor via the counter).
   modem.gprsDisconnect();
-  delay(500);
+  vTaskDelay(pdMS_TO_TICKS(500));
   lteGprsConnected = modem.gprsConnect(lte_apn, "", "");
   Serial.println(lteGprsConnected ? "[LTE] Data connection re-established"
                                    : "[LTE] Data connection still DOWN");
@@ -186,10 +186,10 @@ void taskLTEInit(void *)
 
   pinMode(MODEM_RESET_PIN, OUTPUT);
   digitalWrite(MODEM_RESET_PIN, HIGH);
-  delay(3000);
+  vTaskDelay(pdMS_TO_TICKS(3000));
 
   SerialAT.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
-  delay(300);
+  vTaskDelay(pdMS_TO_TICKS(300));
 
   if (!takeModem(1000))
   {

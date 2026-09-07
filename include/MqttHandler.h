@@ -11,7 +11,6 @@
 extern PubSubClient mqttClient;
 
 void mqttInit();
-void taskMqttLoop(void *);
 void taskMqttPublisher(void *);
 void mqttPublishEvent(const char* payload);
 void mqttPublishResponse(const char* payload);

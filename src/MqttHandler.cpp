@@ -465,21 +465,3 @@ void taskMqttPublisher(void *)
     }
   }
 }
-
-void taskMqttLoop(void *)
-{
-  // Legacy entry point retained for compatibility. The real MQTT work is
-  // done by taskMqttPublisher; this task just performs a low-frequency
-  // status pump so existing wiring does not need to change.
-  TickType_t wake = xTaskGetTickCount();
-  while (true)
-  {
-    vTaskDelayUntil(&wake, pdMS_TO_TICKS(30000));
-    if (lteInitialized && lteGprsConnected && takeModem(500))
-    {
-      if (mqttClient.connected())
-        mqttClient.loop();
-      giveModem();
-    }
-  }
-}

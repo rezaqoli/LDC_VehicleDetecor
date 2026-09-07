@@ -83,7 +83,7 @@ namespace
         }
         line[used++] = c;
       }
-      delay(1);
+      vTaskDelay(pdMS_TO_TICKS(1));
     }
     line[used] = '\0';
     return false;
@@ -196,7 +196,7 @@ namespace
         bool connected = client.connected();
         giveModem();
         if (!connected) break;
-        delay(2);
+        vTaskDelay(pdMS_TO_TICKS(2));
         continue;
       }
       size_t want = (size_t)available;
@@ -232,7 +232,7 @@ namespace
     }
 
     report("OTA_SUCCESS|rebooting");
-    delay(2000);
+    vTaskDelay(pdMS_TO_TICKS(2000));
     ESP.restart();
   }
 }

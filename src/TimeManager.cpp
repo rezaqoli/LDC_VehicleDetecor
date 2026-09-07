@@ -89,7 +89,7 @@ static bool syncTimeFromHttp()
         body += c;
       }
     }
-    delay(1);
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
   httpClient.stop();
   giveModem();

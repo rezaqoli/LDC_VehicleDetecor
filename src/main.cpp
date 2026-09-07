@@ -292,12 +292,7 @@ void setup()
     WsTxMessage *slot = &wsTxPool[i];
     xQueueSend(freeWsMsgQueue, &slot, 0);
   }
-//xTaskCreatePinnedToCore(taskSensorReading, "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
-// ||
-//xTaskCreatePinnedToCore(taskMqttLoop,          "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS ||
-//xTaskCreatePinnedToCore(taskGnssIdleWatcher,  "GNSS",    3072, NULL, 1, NULL, 1) != pdPASS ||
   if (
-    xTaskCreatePinnedToCore(taskMqttLoop,          "MQTT-Loop", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskMqttPublisher,    "MQTT-Pub",  8192, NULL, 2, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSensorReading,        "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskDetector,          "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
