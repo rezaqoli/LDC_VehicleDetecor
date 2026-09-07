@@ -1,0 +1,7 @@
+Target
+pio test -e native
+pio run -e custom_esp32s3
+pio test -e esp32s3_hw
+node --test mqtt-dashboard/test/
+GitHub Actions
+The host tests cover the pure logic — state machine, classifier, traffic counters, loop adjacency, channel-pause flag, reply-channel dispatch, and time formatting. The ESP32 HW tests round-trip NVS persistence and drive two paired detectors with synthetic samples. The dashboard tests cover the parser functions used by the multi-board view.

@@ -30,6 +30,7 @@
 #include "LoopGeometry.h"
 #include "PowerMonitor.h"
 #include "TimeManager.h"
+#include "OtaUpdater.h"
 #include "DetectionControl.h"
 #include "SmsManager.h"
 // ============================================================

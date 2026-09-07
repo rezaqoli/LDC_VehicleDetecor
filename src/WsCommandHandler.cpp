@@ -15,6 +15,7 @@
 #include "LteModem.h"
 #include "DetectionControl.h"
 #include "SmsManager.h"
+#include "OtaUpdater.h"
 #include "cstring"
 
 namespace
@@ -61,7 +62,25 @@ static int parsePipeFloats(const String &s, float *out, int max)
 
 void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
 {
-  if (cmd.startsWith("CALIBRATE_CHANNEL|"))
+  if (cmd.startsWith("OTA_UPDATE|"))
+  {
+    if (otaIsRunning())
+    {
+      reply.send(num, "OTA_ERROR|already_running");
+      return;
+    }
+    String payload = cmd.substring(11);
+    int separator = payload.indexOf('|');
+    String url = separator >= 0 ? payload.substring(0, separator) : payload;
+    String md5 = separator >= 0 ? payload.substring(separator + 1) : "";
+    url.trim();
+    md5.trim();
+    if (otaStartFromModem(url.c_str(), md5.c_str()))
+      reply.send(num, "OTA_ACCEPTED");
+    else
+      reply.send(num, "OTA_ERROR|invalid_request_or_task_start_failed");
+  }
+  else if (cmd.startsWith("CALIBRATE_CHANNEL|"))
   {
     float p[2] = {};
     if (parsePipeFloats(cmd.substring(18), p, 2) == 2)
