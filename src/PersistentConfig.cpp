@@ -246,7 +246,7 @@ bool PersistentConfig::loadConfig(char *clientId, char *server, IPAddress ip, ui
                                   char *apn,
                                   char *mqttTopicEvents, char *mqttTopicCommands, char *mqttTopicCommandResponses)
 {
-    getString("mqtt_client_id", clientId, 32, "ESP32_Vehicle_Detector");
+    getString("mqtt_client_id", clientId, 32, "");
     getString("mqtt_server", server, 64, "iot.iolink.ir");
     getUint("ip_server", (uint32_t *)&ip, 0);
     getInt("mqtt_port", (int32_t *)port, 1883);

@@ -20,7 +20,24 @@ class MqttReplyChannel : public IReplyChannel
  public:
   void send(uint8_t /*num*/, const char *msg) override
   {
-    if (msg) mqttPublishResponse(msg);
+    if (!msg) return;
+    char envelope[MQTT_PUB_PAYLOAD_MAX];
+    const char *cmdId = mqttLastCmdId();
+    if (cmdId && *cmdId)
+    {
+      // Per-board lane: wrap replies with RSP|<cmd_id>| so the dashboard
+      // can correlate each reply with the CMD that triggered it.
+      snprintf(envelope, sizeof(envelope), "RSP|%s|%s", cmdId, msg);
+      mqttPublishResponseTo(mqttTopicResponsesBoard(), envelope);
+      // Global lane: publish the bare reply for backward compatibility
+      // with any tool/dashboard that subscribes to vehicles/command_responses.
+      mqttPublishResponse(msg);
+    }
+    else
+    {
+      // Legacy command (no cmd_id) — fan out to both lanes (bare form).
+      mqttPublishResponse(msg);
+    }
   }
   CmdMedium medium() const override { return CmdMedium::MQTT; }
 };
