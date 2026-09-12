@@ -82,7 +82,7 @@ extern char mqttTopicCommandResponses[64];  // Topic for command responses
 #define BATTERY_LOW_V      9.0f
 #define BATTERY_OK_V       9.5f
 #define POWER_SAMPLE_AVG   32
-#define POWER_PERIOD_MS    60000UL
+#define POWER_PERIOD_MS    5*60000UL
 
 // ============================================================
 // Time sync

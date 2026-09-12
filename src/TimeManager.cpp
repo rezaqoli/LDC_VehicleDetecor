@@ -207,9 +207,9 @@ void taskTimeSync(void *)
   TickType_t wake = xTaskGetTickCount();
   for (;;)
   {
-    if (!syncTimeFromHttp())
+    //if (!syncTimeFromHttp())
     {
-      vTaskDelay(pdMS_TO_TICKS(2000));
+      //vTaskDelay(pdMS_TO_TICKS(2000));
       syncTimeFromModem();
     }
 
