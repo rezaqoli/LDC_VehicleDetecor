@@ -12,6 +12,24 @@ SemaphoreHandle_t modemMutex = nullptr;
 bool lteInitialized = false;
 bool lteGprsConnected = false;
 
+// When true the OTA task owns the modem exclusively.  Every other
+// task must not touch the modem at all — takeModem() bails out
+// instantly and the task loops sleep until the flag is cleared.
+static volatile bool  s_otaModemExclusive = false;
+static TaskHandle_t   s_otaOwnerTask      = nullptr;
+
+void otaSetModemExclusive(bool exclusive, TaskHandle_t ownerTask)
+{
+  s_otaModemExclusive = exclusive;
+  s_otaOwnerTask      = exclusive ? (ownerTask ? ownerTask : xTaskGetCurrentTaskHandle()) : nullptr;
+  Serial.printf("[LTE] OTA exclusive %s\n", exclusive ? "ON — all modem tasks paused" : "OFF — modem tasks resumed");
+}
+
+bool otaIsModemExclusive()
+{
+  return s_otaModemExclusive;
+}
+
 bool modemMutexReady()
 {
   return modemMutex != nullptr;
@@ -19,6 +37,12 @@ bool modemMutexReady()
 
 bool takeModem(uint32_t timeoutMs)
 {
+  if (s_otaModemExclusive && xTaskGetCurrentTaskHandle() != s_otaOwnerTask)
+  {
+    // OTA is flashing — only the OTA task itself may touch the modem.
+    // All other tasks get an instant "busy" without blocking.
+    return false;
+  }
   if (modemMutex == nullptr)
   {
     Serial.println("[LTE] WARN: takeModem before modemMutex is initialised");
@@ -251,6 +275,7 @@ void taskLTEStatusMonitor(void *)
   {
     vTaskDelayUntil(&wake, pdMS_TO_TICKS(60000));
 
+    if (otaIsModemExclusive()) { dataDownStreak = 0; continue; } // don't fight OTA
     if (!lteInitialized)
     {
       dataDownStreak = 0;
@@ -510,6 +535,7 @@ void taskGnssIdleWatcher(void *)
   for (;;)
   {
     vTaskDelay(pdMS_TO_TICKS(5000));
+    if (otaIsModemExclusive()) continue; // don't race OTA's modem use
     if (s_gnssState == GnssState::OFF) continue;
     if (s_gnssLastReqMs == 0)        continue;
     if ((millis() - s_gnssLastReqMs) > GNSS_IDLE_MS)

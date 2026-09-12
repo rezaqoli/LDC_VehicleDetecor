@@ -7,6 +7,8 @@
 bool otaStartFromModem(const char *url, const char *md5);
 bool otaIsRunning();
 
+// otaIsRunning() is implemented in OtaUpdater.cpp.
+
 // Constants for external use (e.g., web app validation)
 static constexpr uint32_t OTA_MAX_IMAGE_SIZE = 3UL * 1024UL * 1024UL;  // 3 MB
 static constexpr uint32_t OTA_MAX_DURATION_MS = 5UL * 60UL * 1000UL;   // 5 minutes

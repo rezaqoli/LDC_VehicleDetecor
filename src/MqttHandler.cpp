@@ -421,6 +421,12 @@ void taskMqttPublisher(void *)
 
   for (;;)
   {
+    // While OTA holds the modem exclusively, sleep instead of hammering takeModem().
+    if (otaIsModemExclusive())
+    {
+      vTaskDelay(pdMS_TO_TICKS(500));
+      continue;
+    }
     // Drain the publish queue with a short blocking wait so we yield CPU.
     if (xQueueReceive(s_pubQueue, &item, pdMS_TO_TICKS(200)) == pdTRUE)
     {

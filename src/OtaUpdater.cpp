@@ -122,8 +122,20 @@ namespace
     return false;
   }
 
-  // Shared download logic for both plain and secure clients.
-  // Uses a template so the same code works with TinyGsmClient and TinyGsmClientSecure.
+  void otaFinishAndExit(const char *errMsg, bool modemHeld, bool updateStarted)
+  {
+    if (errMsg) report(errMsg);
+    if (updateStarted) Update.abort();
+    if (modemHeld) { otaSetModemExclusive(false); giveModem(); }
+    else           { otaSetModemExclusive(false); }
+    s_running = false;
+    vTaskDelete(nullptr);
+  }
+
+  // doOtaDownload runs with the modem already held exclusively by otaTask.
+  // The modem mutex stays held the whole time — no give/take per chunk —
+  // because exclusivity guarantees no other task can interfere, and holding
+  // it prevents any interleaved AT traffic from corrupting the TCP stream.
   template <typename ClientT>
   void doOtaDownload(ClientT &client, const char *host, uint16_t port,
                      const char *path, const OtaRequest &req,
@@ -133,10 +145,7 @@ namespace
 
     if (!client.connect(host, port, OTA_CONNECT_TIMEOUT_MS / 1000))
     {
-      giveModem();
-      report("OTA_ERROR|download_connect_failed");
-      s_running = false;
-      vTaskDelete(nullptr);
+      otaFinishAndExit("OTA_ERROR|download_connect_failed", true, false);
       return;
     }
 
@@ -146,10 +155,7 @@ namespace
     if (!readHeaderLine(client, line, sizeof(line)) || !strstr(line, " 200"))
     {
       client.stop();
-      giveModem();
-      report("OTA_ERROR|http_status_not_200");
-      s_running = false;
-      vTaskDelete(nullptr);
+      otaFinishAndExit("OTA_ERROR|http_status_not_200", true, false);
       return;
     }
 
@@ -160,31 +166,24 @@ namespace
         contentLength = strtol(line + 15, nullptr, 10);
     }
 
-    giveModem();
     if (contentLength <= 0 || (uint32_t)contentLength > OTA_MAX_IMAGE)
     {
-      if (takeModem(2000)) { client.stop(); giveModem(); }
-      report("OTA_ERROR|invalid_image_size");
-      s_running = false;
-      vTaskDelete(nullptr);
+      client.stop();
+      otaFinishAndExit("OTA_ERROR|invalid_image_size", true, false);
       return;
     }
 
     if (req.md5[0] && !Update.setMD5(req.md5))
     {
-      if (takeModem(2000)) { client.stop(); giveModem(); }
-      report("OTA_ERROR|invalid_md5");
-      s_running = false;
-      vTaskDelete(nullptr);
+      client.stop();
+      otaFinishAndExit("OTA_ERROR|invalid_md5", true, false);
       return;
     }
 
     if (!Update.begin((size_t)contentLength))
     {
-      if (takeModem(2000)) { client.stop(); giveModem(); }
-      report("OTA_ERROR|flash_begin_failed");
-      s_running = false;
-      vTaskDelete(nullptr);
+      client.stop();
+      otaFinishAndExit("OTA_ERROR|flash_begin_failed", true, false);
       return;
     }
     updateStarted = true;
@@ -201,18 +200,10 @@ namespace
         break;
       }
 
-      if (!takeModem(2000))
-      {
-        report("OTA_ERROR|modem_busy_during_download");
-        break;
-      }
-
       int available = client.available();
       if (available <= 0)
       {
-        bool connected = client.connected();
-        giveModem();
-        if (!connected) break;
+        if (!client.connected()) break;
         vTaskDelay(pdMS_TO_TICKS(2));
         continue;
       }
@@ -220,13 +211,8 @@ namespace
       size_t want = (size_t)available;
       if (want > sizeof(buffer)) want = sizeof(buffer);
       int rd = client.read(buffer, want);
-      if (rd <= 0)
-      {
-        giveModem();
-        break;
-      }
+      if (rd <= 0) break;
       size_t written = Update.write(buffer, (size_t)rd);
-      giveModem();
       if (written != (size_t)rd) break;
       received += rd;
 
@@ -240,20 +226,22 @@ namespace
       }
     }
 
-    if (takeModem(2000)) { client.stop(); giveModem(); }
+    client.stop();
 
     bool success = updateStarted && received == contentLength && Update.end();
     if (!success)
     {
       if (updateStarted) Update.abort();
-      report(received == contentLength
-               ? "OTA_ERROR|image_validation_failed"
-               : "OTA_ERROR|incomplete_download");
+      report(received == contentLength ? "OTA_ERROR|image_validation_failed" : "OTA_ERROR|incomplete_download");
+      otaSetModemExclusive(false);
+      giveModem();
       s_running = false;
       vTaskDelete(nullptr);
       return;
     }
 
+    otaSetModemExclusive(false);
+    giveModem();
     report("OTA_SUCCESS|rebooting");
     vTaskDelay(pdMS_TO_TICKS(2000));
     ESP.restart();
@@ -271,28 +259,24 @@ namespace
 
     if (!parseUrl(req.url, host, sizeof(host), port, path, sizeof(path), useTls))
     {
-      report("OTA_ERROR|only_valid_http_or_https_url_supported");
-      s_running = false;
-      vTaskDelete(nullptr);
-      return;
-    }
-
-    if (!takeModem(5000))
-    {
-      report("OTA_ERROR|modem_busy");
-      s_running = false;
-      vTaskDelete(nullptr);
+      otaFinishAndExit("OTA_ERROR|only_valid_http_or_https_url_supported", false, false);
       return;
     }
 
     if (!isValidMd5(req.md5))
     {
-      giveModem();
-      report("OTA_ERROR|invalid_md5_format");
-      s_running = false;
-      vTaskDelete(nullptr);
+      otaFinishAndExit("OTA_ERROR|invalid_md5_format", false, false);
       return;
     }
+
+    // Acquire modem for the whole OTA — from here every other task's
+    // takeModem() will instantly fail until we clear exclusivity.
+    if (!takeModem(5000))
+    {
+      otaFinishAndExit("OTA_ERROR|modem_busy", false, false);
+      return;
+    }
+    otaSetModemExclusive(true);
 
     report("OTA_STATUS|downloading");
     mqttClient.disconnect();
@@ -304,6 +288,7 @@ namespace
       doOtaDownload(tlsClient, host, port, path, req, otaStartTime);
 #else
       report("OTA_ERROR|https_not_supported_on_this_modem");
+      otaSetModemExclusive(false);
       giveModem();
       s_running = false;
       vTaskDelete(nullptr);

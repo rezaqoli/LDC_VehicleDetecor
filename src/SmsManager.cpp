@@ -412,6 +412,7 @@ void taskSmsService(void *)
   for (;;)
   {
     vTaskDelay(pdMS_TO_TICKS(SMS_POLL_INTERVAL));
+    if (otaIsModemExclusive()) continue; // OTA owns the modem — sleep without touching it
     if (!lteInitialized || !lteGprsConnected) continue;
 
     uint8_t cnt = countInbox();

@@ -17,6 +17,13 @@ void giveModem();
 bool modemMutexReady();
 void modemMutexInit();
 
+// Called by OTA to make takeModem() immediately fail for all other callers
+// except the OTA task itself (identified by its TaskHandle). While exclusive
+// is true every non-OTA takeModem() returns false without waiting and the
+// modem-using task loops sleep until the flag is cleared.
+void otaSetModemExclusive(bool exclusive, TaskHandle_t ownerTask = nullptr);
+bool otaIsModemExclusive();
+
 // ============================================================
 // GNSS (EC200U built-in).  OFF by default — powers on only
 // when gnssGetFix() / GET_GPS is called, and auto-powers off

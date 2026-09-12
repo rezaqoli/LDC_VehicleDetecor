@@ -207,6 +207,13 @@ void taskTimeSync(void *)
   TickType_t wake = xTaskGetTickCount();
   for (;;)
   {
+    // While OTA holds the modem exclusively, sleep instead of trying takeModem().
+    if (otaIsModemExclusive())
+    {
+      vTaskDelayUntil(&wake, pdMS_TO_TICKS(2000));
+      continue;
+    }
+
     //if (!syncTimeFromHttp())
     {
       //vTaskDelay(pdMS_TO_TICKS(2000));
