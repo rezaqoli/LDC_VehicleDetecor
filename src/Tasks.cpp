@@ -9,6 +9,7 @@
 #include "DetectionControl.h"
 #include "TrafficMonitor.h"
 #include "MqttHandler.h"
+#include "OtaUpdater.h"
 #include <ESPmDNS.h>
 
 const u8_t LedSensors[8] = {LEDs1, LEDs2, LEDs3, LEDs4, LEDs5, LEDs6, LEDs7, LEDs8 };
@@ -356,7 +357,11 @@ void taskWebServer(void *)
         Serial.printf("[WiFi] mDNS start failed for %s.local\n", DEVICE_HOSTNAME);
       }
     }
-    httpServer.handleClient();
+    // ESP2SOTA and modem OTA both use Arduino Update's single global writer.
+    // Do not allow a Wi-Fi /update request to call Update.begin/write/end while
+    // the modem OTA task is flashing the application partition.
+    if (!otaIsRunning())
+      httpServer.handleClient();
     vTaskDelay(pdMS_TO_TICKS(10));
   }
 }

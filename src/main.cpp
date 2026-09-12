@@ -154,7 +154,7 @@ void setup()
 {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\n[LDC1614 v4.5] Modular Build");
+  Serial.println("\n[LDC1614 v5.3] Modular Build");
 
   // Initialize persistent storage FIRST
   PersistentConfig::init();

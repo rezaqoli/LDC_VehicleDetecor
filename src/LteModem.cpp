@@ -212,6 +212,10 @@ void taskLTEInit(void *)
   digitalWrite(MODEM_RESET_PIN, HIGH);
   vTaskDelay(pdMS_TO_TICKS(3000));
 
+  // HardwareSerial only accepts buffer resizing before begin().  Calling
+  // setRxBufferSize() after begin() silently leaves the small default buffer
+  // in place, which corrupts large +QIRD responses during OTA downloads.
+  SerialAT.setRxBufferSize(8192);
   SerialAT.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
   vTaskDelay(pdMS_TO_TICKS(300));
 
