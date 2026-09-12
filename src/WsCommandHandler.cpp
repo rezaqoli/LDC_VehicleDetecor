@@ -69,13 +69,54 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
       reply.send(num, "OTA_ERROR|already_running");
       return;
     }
-    String payload = cmd.substring(11);
-    int separator = payload.indexOf('|');
-    String url = separator >= 0 ? payload.substring(0, separator) : payload;
-    String md5 = separator >= 0 ? payload.substring(separator + 1) : "";
-    url.trim();
-    md5.trim();
-    if (otaStartFromModem(url.c_str(), md5.c_str()))
+    // Parse "OTA_UPDATE|url|md5" without creating intermediate String objects
+    const char *raw = cmd.c_str();
+    const char *urlStart = raw + 11; // skip "OTA_UPDATE|"
+    while (*urlStart == ' ' || *urlStart == '\t') urlStart++;
+    const char *sep = strchr(urlStart, '|');
+    const char *urlEnd = sep ? sep : urlStart + strlen(urlStart);
+    const char *md5Start = sep ? sep + 1 : nullptr;
+    // Trim trailing spaces from url
+    while (urlEnd > urlStart && (*(urlEnd - 1) == ' ' || *(urlEnd - 1) == '\t')) urlEnd--;
+    // Trim md5
+    const char *md5End = nullptr;
+    if (md5Start)
+    {
+      while (*md5Start == ' ' || *md5Start == '\t') md5Start++;
+      md5End = md5Start + strlen(md5Start);
+      while (md5End > md5Start && (*(md5End - 1) == ' ' || *(md5End - 1) == '\t'))
+        md5End--;
+    }
+
+    if (urlStart == urlEnd || (size_t)(urlEnd - urlStart) >= 192)
+    {
+      reply.send(num, "OTA_ERROR|invalid_url");
+      return;
+    }
+
+    char urlBuf[192];
+    char md5Buf[33];
+    size_t urlLen = (size_t)(urlEnd - urlStart);
+    memcpy(urlBuf, urlStart, urlLen);
+    urlBuf[urlLen] = '\0';
+    if (md5Start && md5End > md5Start)
+    {
+      size_t md5Len = (size_t)(md5End - md5Start);
+      if (md5Len >= sizeof(md5Buf))
+      {
+        reply.send(num, "OTA_ERROR|invalid_md5");
+        return;
+      }
+      memcpy(md5Buf, md5Start, md5Len);
+      md5Buf[md5Len] = '\0';
+    }
+    else
+    {
+      md5Buf[0] = '\0';
+    }
+
+    Serial.printf("[OTA] Request url=%s md5=%s\n", urlBuf, md5Buf[0] ? md5Buf : "(none)");
+    if (otaStartFromModem(urlBuf, md5Buf))
       reply.send(num, "OTA_ACCEPTED");
     else
       reply.send(num, "OTA_ERROR|invalid_request_or_task_start_failed");
