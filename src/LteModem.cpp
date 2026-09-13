@@ -5,6 +5,10 @@
 
 char lte_apn[32] = "shatelmobile";
 
+#if MODEM_TRANSPORT == MODEM_TRANSPORT_USB
+UsbModemStream ModemUSB;
+#endif
+
 TinyGsm modem(SerialAT);
 TinyGsmClient lteClient(modem);
 SemaphoreHandle_t modemMutex = nullptr;
@@ -212,12 +216,21 @@ void taskLTEInit(void *)
   digitalWrite(MODEM_RESET_PIN, HIGH);
   vTaskDelay(pdMS_TO_TICKS(3000));
 
-  // HardwareSerial only accepts buffer resizing before begin().  Calling
-  // setRxBufferSize() after begin() silently leaves the small default buffer
-  // in place, which corrupts large +QIRD responses during OTA downloads.
+#if MODEM_TRANSPORT == MODEM_TRANSPORT_UART
   SerialAT.setRxBufferSize(8192);
   SerialAT.begin(MODEM_BAUD_RATE, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
   vTaskDelay(pdMS_TO_TICKS(300));
+#else
+  Serial.println("[LTE] Starting EC200 USB host transport...");
+  if (!SerialAT.begin() || !SerialAT.waitForDevice(15000))
+  {
+    Serial.println("[LTE] FATAL: EC200 USB AT interface not found");
+    wsSend("[LTE] FATAL: EC200 USB AT interface not found");
+    vTaskDelete(nullptr);
+    return;
+  }
+  vTaskDelay(pdMS_TO_TICKS(500));
+#endif
 
   if (!takeModem(1000))
   {

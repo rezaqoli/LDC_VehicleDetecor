@@ -48,7 +48,29 @@
   #endif
 #endif
 
+// Modem transport selection. Override MODEM_TRANSPORT with a build flag.
+#define MODEM_TRANSPORT_UART 1
+#define MODEM_TRANSPORT_USB  2
+#ifndef MODEM_TRANSPORT
+#define MODEM_TRANSPORT MODEM_TRANSPORT_UART
+#endif
+
+#define EC200U_USB_VID          0x2C7C
+#define EC200U_USB_PID          0x0901
+#define EC200U_USB_AT_INTERFACE 2
+
+#if MODEM_TRANSPORT == MODEM_TRANSPORT_UART
 #define SerialAT Serial1
+#elif MODEM_TRANSPORT == MODEM_TRANSPORT_USB
+#if !defined(ESP32s3)
+#error "USB modem transport requires ESP32-S3"
+#endif
+#include "UsbModemStream.h"
+extern UsbModemStream ModemUSB;
+#define SerialAT ModemUSB
+#else
+#error "Invalid MODEM_TRANSPORT selection"
+#endif
 #define TINY_GSM_MODEM_BG96
 #define TINY_GSM_RX_BUFFER 1024
 #define TINY_GSM_YIELD_MS 2

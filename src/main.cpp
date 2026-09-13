@@ -154,7 +154,7 @@ void setup()
 {
   Serial.begin(115200);
   delay(300);
-  Serial.println("\n[LDC1614 v5.5] Modular Build");
+  Serial.println("\n[LDC1614 v5.6] Modular Build");
 
   // Initialize persistent storage FIRST
   PersistentConfig::init();
@@ -217,7 +217,7 @@ void setup()
   IPAddress ip(192, 168, 100, 232);
   IPAddress gateway(192, 168, 100, 1);
   IPAddress subnet(255, 255, 255, 0);
-  WiFi.config(ip, gateway, subnet);
+  //WiFi.config(ip, gateway, subnet);
   WiFi.setHostname(DEVICE_HOSTNAME);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);

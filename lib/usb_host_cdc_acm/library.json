@@ -1,0 +1,11 @@
+{
+  "name": "usb_host_cdc_acm",
+  "version": "1.0.4",
+  "description": "Vendored Espressif USB Host CDC-ACM driver",
+  "license": "Apache-2.0",
+  "build": {
+    "srcDir": ".",
+    "includeDir": "include",
+    "srcFilter": "+<cdc_acm_host.c>"
+  }
+}
