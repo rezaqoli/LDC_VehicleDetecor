@@ -5,6 +5,7 @@
 #include "UsbModemStream.h"
 #include "esp_err.h"
 #include "usb/usb_host.h"
+#include "usb/usb_helpers.h"
 
 namespace
 {
@@ -12,8 +13,11 @@ constexpr size_t USB_MODEM_RX_BUFFER_SIZE = 16 * 1024;
 constexpr size_t USB_MODEM_TX_BUFFER_SIZE = 1024;
 }
 
+UsbModemStream *UsbModemStream::activeInstance_ = nullptr;
+
 UsbModemStream::UsbModemStream()
-  : rxBuffer_(nullptr), device_(nullptr), connected_(false), peeked_(-1)
+  : rxBuffer_(nullptr), device_(nullptr), connected_(false), enumerated_(false),
+    detectedVid_(0), detectedPid_(0), bulkInterfaceCount_(0), peeked_(-1)
 {
 }
 
@@ -41,7 +45,8 @@ bool UsbModemStream::begin()
   driverConfig.driver_task_stack_size = 4096;
   driverConfig.driver_task_priority = 6;
   driverConfig.xCoreID = 0;
-  driverConfig.new_dev_cb = nullptr;
+  activeInstance_ = this;
+  driverConfig.new_dev_cb = newDeviceCallback;
   err = cdc_acm_host_install(&driverConfig);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
   {
@@ -56,19 +61,47 @@ bool UsbModemStream::waitForDevice(uint32_t timeoutMs)
   if (connected_ && device_)
     return true;
 
+  const uint32_t started = millis();
+  while (!enumerated_ && millis() - started < timeoutMs)
+    delay(20);
+  if (!enumerated_)
+  {
+    Serial.println("[USB MODEM] No USB device enumerated (check VBUS, D+/D-, cable and host wiring)");
+    return false;
+  }
+
   cdc_acm_host_device_config_t config = {};
-  config.connection_timeout_ms = timeoutMs;
+  config.connection_timeout_ms = 1000;
   config.out_buffer_size = USB_MODEM_TX_BUFFER_SIZE;
   config.event_cb = eventCallback;
   config.data_cb = rxCallback;
   config.user_arg = this;
 
-  esp_err_t err = cdc_acm_host_open_vendor_specific(
-      EC200U_USB_VID, EC200U_USB_PID, EC200U_USB_AT_INTERFACE,
-      &config, &device_);
+  uint8_t candidates[17] = {EC200U_USB_AT_INTERFACE};
+  uint8_t candidateCount = 1;
+  for (uint8_t i = 0; i < bulkInterfaceCount_ && candidateCount < sizeof(candidates); ++i)
+  {
+    if (bulkInterfaces_[i] != EC200U_USB_AT_INTERFACE)
+      candidates[candidateCount++] = bulkInterfaces_[i];
+  }
+
+  esp_err_t err = ESP_ERR_NOT_FOUND;
+  uint8_t openedInterface = 0xFF;
+  for (uint8_t i = 0; i < candidateCount; ++i)
+  {
+    Serial.printf("[USB MODEM] Trying %04X:%04X interface %u\n",
+                  detectedVid_, detectedPid_, candidates[i]);
+    err = cdc_acm_host_open_vendor_specific(
+        detectedVid_, detectedPid_, candidates[i], &config, &device_);
+    if (err == ESP_OK)
+    {
+      openedInterface = candidates[i];
+      break;
+    }
+  }
   if (err != ESP_OK)
   {
-    Serial.printf("[USB MODEM] EC200 open failed: %s\n", esp_err_to_name(err));
+    Serial.printf("[USB MODEM] No usable bulk interface: %s\n", esp_err_to_name(err));
     device_ = nullptr;
     connected_ = false;
     return false;
@@ -76,9 +109,73 @@ bool UsbModemStream::waitForDevice(uint32_t timeoutMs)
 
   connected_ = true;
   Serial.printf("[USB MODEM] Connected %04X:%04X interface %u\n",
-                EC200U_USB_VID, EC200U_USB_PID, EC200U_USB_AT_INTERFACE);
+                detectedVid_, detectedPid_, openedInterface);
   cdc_acm_host_desc_print(device_);
   return true;
+}
+
+void UsbModemStream::newDeviceCallback(usb_device_handle_t usbDevice)
+{
+  UsbModemStream *self = activeInstance_;
+  if (!self || !usbDevice)
+    return;
+
+  const usb_device_desc_t *deviceDesc = nullptr;
+  const usb_config_desc_t *configDesc = nullptr;
+  if (usb_host_get_device_descriptor(usbDevice, &deviceDesc) != ESP_OK ||
+      usb_host_get_active_config_descriptor(usbDevice, &configDesc) != ESP_OK)
+    return;
+
+  self->detectedVid_ = deviceDesc->idVendor;
+  self->detectedPid_ = deviceDesc->idProduct;
+  self->bulkInterfaceCount_ = 0;
+  Serial.printf("[USB MODEM] Enumerated %04X:%04X, %u interfaces\n",
+                deviceDesc->idVendor, deviceDesc->idProduct, configDesc->bNumInterfaces);
+
+  // Walk the descriptors because USB interface numbers need not be contiguous.
+  const uint8_t *cursor = reinterpret_cast<const uint8_t *>(configDesc);
+  const uint8_t *end = cursor + configDesc->wTotalLength;
+  while (cursor + 2 <= end)
+  {
+    const usb_standard_desc_t *standard = reinterpret_cast<const usb_standard_desc_t *>(cursor);
+    if (standard->bLength < 2 || cursor + standard->bLength > end)
+      break;
+    if (standard->bDescriptorType == USB_B_DESCRIPTOR_TYPE_INTERFACE &&
+        standard->bLength >= sizeof(usb_intf_desc_t))
+    {
+      const usb_intf_desc_t *intf = reinterpret_cast<const usb_intf_desc_t *>(cursor);
+      bool bulkIn = false;
+      bool bulkOut = false;
+      const uint8_t *next = cursor + standard->bLength;
+      while (next + 2 <= end)
+      {
+        const usb_standard_desc_t *child = reinterpret_cast<const usb_standard_desc_t *>(next);
+        if (child->bLength < 2 || next + child->bLength > end ||
+            child->bDescriptorType == USB_B_DESCRIPTOR_TYPE_INTERFACE)
+          break;
+        if (child->bDescriptorType == USB_B_DESCRIPTOR_TYPE_ENDPOINT &&
+            child->bLength >= sizeof(usb_ep_desc_t))
+        {
+          const usb_ep_desc_t *ep = reinterpret_cast<const usb_ep_desc_t *>(next);
+          Serial.printf("[USB MODEM] IF %u class %02X EP %02X attr %02X MPS %u\n",
+                        intf->bInterfaceNumber, intf->bInterfaceClass,
+                        ep->bEndpointAddress, ep->bmAttributes, ep->wMaxPacketSize);
+          if (USB_EP_DESC_GET_XFERTYPE(ep) == USB_TRANSFER_TYPE_BULK)
+          {
+            if (USB_EP_DESC_GET_EP_DIR(ep))
+              bulkIn = true;
+            else
+              bulkOut = true;
+          }
+        }
+        next += child->bLength;
+      }
+      if (bulkIn && bulkOut && self->bulkInterfaceCount_ < sizeof(self->bulkInterfaces_))
+        self->bulkInterfaces_[self->bulkInterfaceCount_++] = intf->bInterfaceNumber;
+    }
+    cursor += standard->bLength;
+  }
+  self->enumerated_ = true;
 }
 
 bool UsbModemStream::connected() const
