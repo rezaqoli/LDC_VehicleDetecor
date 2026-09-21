@@ -18,6 +18,11 @@ VehicleDetector::VehicleDetector(const char *id, DetectorConfig cfg)
 {
     strncpy(id_, id, sizeof(id_) - 1);
     id_[sizeof(id_) - 1] = '\0';
+    AutoCalibConfig auto_cfg = calibrator_.getConfig();
+    auto_cfg.calibration_samples = cfg_.calib_samples ? cfg_.calib_samples : 1;
+    auto_cfg.baseline_alpha_main = cfg_.baseline_alpha;
+    auto_cfg.auto_reanchor_enabled = cfg_.auto_reanchor_enabled;
+    calibrator_.setConfig(auto_cfg);
     reset_state(DetectorState::WARMUP);
     calibrator_.begin(millis());
 }
@@ -30,19 +35,40 @@ void VehicleDetector::setConfig(const DetectorConfig &c)
     if (cfg_.entry_mode != c.entry_mode)
         reset_entry_tracking();
     cfg_ = c;
+    AutoCalibConfig auto_cfg = calibrator_.getConfig();
+    auto_cfg.calibration_samples = cfg_.calib_samples ? cfg_.calib_samples : 1;
+    auto_cfg.baseline_alpha_main = cfg_.baseline_alpha;
+    auto_cfg.auto_reanchor_enabled = cfg_.auto_reanchor_enabled;
+    calibrator_.setConfig(auto_cfg);
+    if (calibrator_.baseline() > 0.0f)
+        syncCalibration(CalibrationUpdate::NONE, millis());
+    else
+    {
+        effective_enter_thresh_ = cfg_.enter_thresh;
+        effective_absolute_min_dev_ = cfg_.absolute_min_dev;
+    }
 }
 DetectorConfig VehicleDetector::getConfig() const { return cfg_; }
 void VehicleDetector::setDualLoopMode(bool enabled) { dual_loop_mode_ = enabled; }
 bool VehicleDetector::isDualLoopMode() const { return dual_loop_mode_; }
 
-float VehicleDetector::baseline() const { return baseline_; }
+float VehicleDetector::baseline() const { return calibrator_.baseline(); }
 const char *VehicleDetector::id() const { return id_; }
-float VehicleDetector::noiseStd() const { return noise_std_; }
-float VehicleDetector::noiseRms() const { return noise_rms_; }
+float VehicleDetector::noiseStd() const { return calibrator_.noiseStd(); }
+float VehicleDetector::noiseRms() const { return calibrator_.noiseRms(); }
 float VehicleDetector::noisePercent() const
 {
-    return (baseline_ > 1e-6f) ? (noise_std_ / baseline_) : 0.0f;
+    return calibrator_.noisePercent();
 }
+float VehicleDetector::currentAnomaly() const { return current_anomaly_; }
+bool VehicleDetector::activitySuspected() const { return activity_suspected_ || state_ == DetectorState::IN_EVENT; }
+void VehicleDetector::noteInvalidSample(uint32_t now_ms) { calibrator_.onInvalidSample(now_ms); }
+void VehicleDetector::setAutoReanchorEnabled(bool enabled)
+{
+    cfg_.auto_reanchor_enabled = enabled;
+    calibrator_.setAutoReanchorEnabled(enabled);
+}
+bool VehicleDetector::autoReanchorEnabled() const { return calibrator_.autoReanchorEnabled(); }
 
 // ============================================================
 // Auto-Calibration Accessors
@@ -53,14 +79,16 @@ float VehicleDetector::confidence() const { return calibrator_.confidence(); }
 float VehicleDetector::driftScore() const { return calibrator_.driftScore(); }
 SensorHealth VehicleDetector::health() const { return calibrator_.health(); }
 void VehicleDetector::buildCalibStatus(char *buf, size_t bufSize) const { calibrator_.buildStatusString(buf, bufSize); }
+void VehicleDetector::buildDetailedCalibStatus(char *buf, size_t bufSize) const { calibrator_.buildDetailedStatusString(buf, bufSize); }
 
 // ============================================================
 // Calibration
 // ============================================================
 void VehicleDetector::startCalibration()
 {
-    reset_state(DetectorState::CALIBRATING);
     calibrator_.startManualCalibration();
+    if (baseline_ <= 0.0f)
+        reset_state(DetectorState::CALIBRATING);
 }
 
 void VehicleDetector::finishCalibration()
@@ -84,31 +112,32 @@ void VehicleDetector::finishCalibration()
     if (noise_rms_ < 1e-6f)
         noise_rms_ = noise_std_;
 
+    const AutoCalibConfig auto_cfg = calibrator_.getConfig();
+    if (baseline_ <= 0.0f || noise_std_ / baseline_ > auto_cfg.quiet_max_std_ratio)
+    {
+        char rejected[128];
+        snprintf(rejected, sizeof(rejected),
+                 "CALIBRATION_REJECTED|%s|noise_ratio:%.7f", id_, noise_std_ / fmaxf(baseline_, 1.0f));
+        wsSend(rejected);
+        reset_state(DetectorState::CALIBRATING);
+        return;
+    }
+
     // Seed the adaptive calibrator with the initial calibration. Calling
     // begin() here used to erase these values, leaving it unable to adapt.
     calibrator_.setCalibrationResult(baseline_, noise_std_, noise_rms_, millis());
 
-    if (cfg_.auto_threshold)
-    {
-        float noise_percent = (baseline_ > 1e-6f) ? (noise_std_ / baseline_) : 0.0f;
-        float new_abs_dev = cfg_.abs_sigma * noise_percent;
-        float new_enter_thresh = cfg_.enter_sigma * noise_percent;
-
-        cfg_.absolute_min_dev = clampf(new_abs_dev, cfg_.min_abs_dev, cfg_.max_abs_dev);
-        cfg_.enter_thresh = clampf(new_enter_thresh, cfg_.min_enter_thresh, cfg_.max_enter_thresh);
-        if (cfg_.enter_thresh < cfg_.absolute_min_dev)
-            cfg_.enter_thresh = cfg_.absolute_min_dev;
-    }
+    syncCalibration(CalibrationUpdate::MANUAL_APPLIED, millis());
 
     state_ = DetectorState::IDLE;
     char msg[512];
     snprintf(msg, sizeof(msg),
              "[%s] Calibration done: baseline=%.6f, noise_std=%.6f, noise_rms=%.6f, noise_percent=%.6f, enter_thresh=%.6f, absolute_min_dev=%.6f",
-             id_, baseline_, noise_std_, noise_rms_, noisePercent(), cfg_.enter_thresh, cfg_.absolute_min_dev);
+             id_, baseline_, noise_std_, noise_rms_, noisePercent(), effective_enter_thresh_, effective_absolute_min_dev_);
     wsSend(msg);
     Serial.printf(
         "[%s] Baseline=%.1f std=%.2f rms=%.2f noise=%.6f -> enter=%.6f abs=%.6f\n",
-        id_, baseline_, noise_std_, noise_rms_, noisePercent(), cfg_.enter_thresh, cfg_.absolute_min_dev);
+        id_, baseline_, noise_std_, noise_rms_, noisePercent(), effective_enter_thresh_, effective_absolute_min_dev_);
 }
 
 // ============================================================
@@ -118,20 +147,23 @@ void VehicleDetector::recalcThresholds()
 {
     if (cfg_.auto_threshold && baseline_ > 0.0f && noise_std_ > 0.0f)
     {
-        float noise_percent = noise_std_ / baseline_;
-        float new_abs_dev = cfg_.abs_sigma * noise_percent;
-        float new_enter_thresh = cfg_.enter_sigma * noise_percent;
-
-        cfg_.absolute_min_dev = clampf(new_abs_dev, cfg_.min_abs_dev, cfg_.max_abs_dev);
-        cfg_.enter_thresh = clampf(new_enter_thresh, cfg_.min_enter_thresh, cfg_.max_enter_thresh);
-        if (cfg_.enter_thresh < cfg_.absolute_min_dev)
-            cfg_.enter_thresh = cfg_.absolute_min_dev;
+        effective_absolute_min_dev_ = calibrator_.absoluteMinDev(
+            cfg_.abs_sigma, cfg_.min_abs_dev, cfg_.max_abs_dev);
+        effective_enter_thresh_ = calibrator_.enterThreshold(
+            cfg_.enter_sigma, cfg_.min_enter_thresh, cfg_.max_enter_thresh);
+        if (effective_enter_thresh_ < effective_absolute_min_dev_)
+            effective_enter_thresh_ = effective_absolute_min_dev_;
 
         char msg[128];
         snprintf(msg, sizeof(msg),
                  "[%s] Thresholds updated: enter=%.6f, abs=%.6f (sigma=%.2f)",
-                 id_, cfg_.enter_thresh, cfg_.absolute_min_dev, cfg_.enter_sigma);
+                 id_, effective_enter_thresh_, effective_absolute_min_dev_, cfg_.enter_sigma);
         wsSend(msg);
+    }
+    else
+    {
+        effective_enter_thresh_ = cfg_.enter_thresh;
+        effective_absolute_min_dev_ = cfg_.absolute_min_dev;
     }
 }
 
@@ -166,12 +198,57 @@ float VehicleDetector::smoothInput(float val)
     return filtered_val_;
 }
 
-void VehicleDetector::update_baseline(float val)
+void VehicleDetector::resetFilterHistory(float seed)
 {
-    float raw_enter_window = cfg_.enter_thresh * baseline_;
-    if (fabsf(val - baseline_) < (raw_enter_window * 0.5f))
+    filtered_val_ = seed;
+    prev_filtered_ = seed;
+    prev_filtered_us_ = 0;
+    reset_entry_tracking();
+}
+
+void VehicleDetector::syncCalibration(CalibrationUpdate update, uint32_t now_ms)
+{
+    if (update == CalibrationUpdate::REJECTED)
     {
-        baseline_ = baseline_ * (1.0f - cfg_.baseline_alpha) + val * cfg_.baseline_alpha;
+        char msg[96];
+        snprintf(msg, sizeof(msg), "CALIBRATION_REJECTED|%s|unstable_window", id_);
+        wsSend(msg);
+    }
+    const CalibrationSnapshot snap = calibrator_.snapshot();
+    if (!snap.valid) return;
+    baseline_ = snap.baseline;
+    noise_std_ = snap.noise_std;
+    noise_rms_ = snap.noise_rms;
+    if (cfg_.auto_threshold && baseline_ > 0.0f && noise_std_ > 0.0f)
+    {
+        effective_absolute_min_dev_ = calibrator_.absoluteMinDev(
+            cfg_.abs_sigma, cfg_.min_abs_dev, cfg_.max_abs_dev);
+        effective_enter_thresh_ = calibrator_.enterThreshold(
+            cfg_.enter_sigma, cfg_.min_enter_thresh, cfg_.max_enter_thresh);
+        if (effective_enter_thresh_ < effective_absolute_min_dev_)
+            effective_enter_thresh_ = effective_absolute_min_dev_;
+    }
+    else
+    {
+        effective_enter_thresh_ = cfg_.enter_thresh;
+        effective_absolute_min_dev_ = cfg_.absolute_min_dev;
+    }
+
+    if (update == CalibrationUpdate::REANCHORED || update == CalibrationUpdate::MANUAL_APPLIED)
+    {
+        if (state_ == DetectorState::IN_EVENT)
+        {
+            calibrator_.onEventEnd(now_ms);
+            reset_state(DetectorState::IDLE);
+        }
+        resetFilterHistory(baseline_);
+        char msg[160];
+        snprintf(msg, sizeof(msg), "CALIBRATION_APPLIED|%s|type:%s|baseline:%.3f|noise:%.3f",
+                 id_, update == CalibrationUpdate::REANCHORED ? "AUTO" : "MANUAL",
+                 baseline_, noise_std_);
+        wsSend(msg);
+        if (update == CalibrationUpdate::REANCHORED && onRecalibrateNeeded)
+            onRecalibrateNeeded(id_);
     }
 }
 
@@ -188,6 +265,9 @@ void VehicleDetector::reset_state(DetectorState s)
     exit_counter_ = 0;
     above_thresh_count_ = 0;
     sustained_dev_cnt_ = 0;
+    slow_dev_start_us_ = 0;
+    activity_suspected_ = false;
+    current_anomaly_ = 0.0f;
     ev_start_us_ = 0;
     ev_peak_us_ = 0;
     ev_peak_dev_ = 0;
@@ -205,6 +285,7 @@ void VehicleDetector::reset_entry_tracking()
     derivative_candidate_floor_ = 0.0f;
     above_thresh_count_ = 0;
     sustained_dev_cnt_ = 0;
+    slow_dev_start_us_ = 0;
 }
 
 // ============================================================
@@ -227,6 +308,8 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
 
     case DetectorState::CALIBRATING:
     {
+        // Calibrate the same smoothed signal domain used for detection.
+        val = smoothInput(val);
         if (calib_cnt_ == 0)
         {
             calib_mean_ = val;
@@ -259,11 +342,14 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
 
     case DetectorState::IDLE:
     {
-        update_baseline(val);
         float filtered = smoothInput(val);
+        // The calibrator is the single source of truth for the active model.
+        syncCalibration(CalibrationUpdate::NONE, ts_us / 1000);
         if (baseline_ <= 1e-6f)
             return false;
         float dev = (filtered - baseline_) / baseline_;
+        current_anomaly_ = dev;
+        activity_suspected_ = false;
 
         bool enter_condition = false;
         const bool derivative_mode = (cfg_.entry_mode == EntryDetectionMode::DERIVATIVE);
@@ -274,17 +360,25 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
             float dt_ms = (prev_filtered_us_ != 0 && ts_us > prev_filtered_us_)
                               ? (ts_us - prev_filtered_us_) / 1000.0f
                               : 5.0f;
-            float slope = fabsf(filtered - prev_filtered_) / fmaxf(dt_ms, 0.001f);
-            bool fast_entry = (dev >= cfg_.enter_thresh && dev >= cfg_.absolute_min_dev &&
+            float slope = 1000.0f * fabsf(filtered - prev_filtered_) /
+                          fmaxf(baseline_ * dt_ms, 0.001f);
+            bool fast_entry = (dev >= effective_enter_thresh_ && dev >= effective_absolute_min_dev_ &&
                                slope >= cfg_.min_entry_slope);
 
-            if (dev >= cfg_.absolute_min_dev && dev < cfg_.enter_thresh)
+            if (dev >= effective_absolute_min_dev_ && dev < effective_enter_thresh_)
+            {
+                if (slow_dev_start_us_ == 0) slow_dev_start_us_ = ts_us;
                 sustained_dev_cnt_++;
+            }
             else
+            {
                 sustained_dev_cnt_ = 0;
+                slow_dev_start_us_ = 0;
+            }
 
-            bool slow_entry = (sustained_dev_cnt_ * dt_ms >= cfg_.min_slow_enter_ms) &&
-                              (dev >= cfg_.absolute_min_dev);
+            const uint32_t slow_elapsed_ms = slow_dev_start_us_ ? (ts_us - slow_dev_start_us_) / 1000 : 0;
+            bool slow_entry = slow_elapsed_ms >= cfg_.min_slow_enter_ms &&
+                              dev >= effective_absolute_min_dev_;
             enter_condition = fast_entry || slow_entry;
         }
         else if (!derivative_initialized_)
@@ -334,7 +428,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
             if (!derivative_candidate_ && (sharp_entry || slow_entry))
             {
                 derivative_candidate_ = true;
-                derivative_candidate_floor_ = derivative_origin_dev_;
+                derivative_candidate_floor_ = derivative_origin_dev_ + 0.25f * net_rise;
                 above_thresh_count_ = 1;
             }
             else if (derivative_candidate_)
@@ -358,6 +452,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
 
         if (enter_condition)
         {
+            activity_suspected_ = true;
             if (!derivative_mode)
                 above_thresh_count_++;
             if (above_thresh_count_ >= cfg_.confirm_samples)
@@ -372,6 +467,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
                 above_thresh_count_ = 0;
                 signal_[signal_cnt_++] = dev;
                 sustained_dev_cnt_ = 0;
+                slow_dev_start_us_ = 0;
                 derivative_candidate_ = false;
             }
         }
@@ -382,8 +478,10 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
         // Update adaptive statistics after making the entry decision, so the
         // leading edge cannot raise its own derivative threshold. Once entry
         // is confirmed, mark this sample active to keep it out of quiet noise.
-        calibrator_.onSample(val, ts_us / 1000,
-                             state_ == DetectorState::IN_EVENT || derivative_candidate_);
+        CalibrationUpdate update = calibrator_.onSample(
+            filtered, ts_us / 1000,
+            state_ == DetectorState::IN_EVENT || derivative_candidate_ || enter_condition);
+        syncCalibration(update, ts_us / 1000);
         return false;
     }
 
@@ -393,6 +491,15 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
         if (baseline_ <= 1e-6f)
             return false;
         float dev = (filtered - baseline_) / baseline_;
+        current_anomaly_ = dev;
+        activity_suspected_ = true;
+
+        CalibrationUpdate update = calibrator_.onSample(filtered, ts_us / 1000, true);
+        if (update == CalibrationUpdate::REANCHORED || update == CalibrationUpdate::MANUAL_APPLIED)
+        {
+            syncCalibration(update, ts_us / 1000);
+            return false;
+        }
 
         if (signal_cnt_ < MAX_SIGNAL)
         {
@@ -414,11 +521,11 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
         float exit_level = derivative_mode
                                ? fmaxf(ev_peak_dev_ * cfg_.exit_ratio, derivative_exit_floor)
                                : fmaxf(ev_peak_dev_ * cfg_.exit_ratio,
-                                       cfg_.enter_thresh * cfg_.exit_hysteresis_ratio);
+                                       effective_enter_thresh_ * cfg_.exit_hysteresis_ratio);
         bool exit_condition = (dev < exit_level);
         bool duration_ok = (elapsed_ms >= cfg_.min_event_ms);
-        bool peak_ok = derivative_mode ||
-                       (ev_peak_dev_ >= cfg_.enter_thresh && ev_peak_dev_ >= cfg_.absolute_min_dev);
+        // Slow entry is intentionally valid below the fast-entry threshold.
+        bool peak_ok = derivative_mode || ev_peak_dev_ >= effective_absolute_min_dev_;
 
         if (exit_condition)
         {
@@ -433,6 +540,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
         {
             calibrator_.onEventEnd(ts_us / 1000);
             state_ = DetectorState::IDLE;
+            activity_suspected_ = false;
             extract_features(ts_us, result);
             classify(result);
             return true;
@@ -441,6 +549,7 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
         if (elapsed_ms > cfg_.max_event_ms)
         {
             Serial.printf("[%s] Event timeout\n", id_);
+            calibrator_.onEventEnd(ts_us / 1000);
             reset_state(DetectorState::IDLE);
         }
         return false;
@@ -585,7 +694,7 @@ void VehicleDetector::extract_features(uint32_t end_us, EventResult &ev)
         peak_indices[peak_count++] = i;
     }
 
-    if (peak_count == 0 && ev.peak_dev >= cfg_.absolute_min_dev)
+    if (peak_count == 0 && ev.peak_dev >= effective_absolute_min_dev_)
         peak_count = 1;
 
     ev.num_peaks = peak_count;
@@ -666,7 +775,7 @@ void VehicleDetector::extract_features(uint32_t end_us, EventResult &ev)
     ev.max_slope = max_slope;
 
     // --- Anomaly score ---
-    ev.anomaly_score = (int)((ev.peak_dev / fmaxf(cfg_.enter_thresh, 1e-6f)) * 20.0f);
+    ev.anomaly_score = (int)((ev.peak_dev / fmaxf(effective_enter_thresh_, 1e-6f)) * 20.0f);
     if (ev.anomaly_score > 100)
         ev.anomaly_score = 100;
 
@@ -691,7 +800,7 @@ void VehicleDetector::classify(EventResult &ev)
     float crest = ev.crest_factor;
     float width_ratio = (ev.sample_count > 0) ? ((float)ev.width_half_max / (float)ev.sample_count) : 0.0f;
     float com_norm = (ev.sample_count > 1) ? (ev.com_idx / (float)(ev.sample_count - 1)) : 0.5f;
-    float peak_to_thresh = ev.peak_dev / fmaxf(cfg_.enter_thresh, 1e-6f);
+    float peak_to_thresh = ev.peak_dev / fmaxf(effective_enter_thresh_, 1e-6f);
 
     // Score buckets
     int motor = 0, car = 0, pickup = 0, van = 0, bus = 0;

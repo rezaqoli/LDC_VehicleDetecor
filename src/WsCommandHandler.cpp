@@ -554,8 +554,57 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
     }
     reply.send(num, msg);
   }
+  else if (cmd.startsWith("AUTO_CALIB|"))
+  {
+    float p[3] = {};
+    int count = parsePipeFloats(cmd.substring(11), p, 3);
+    if (count != 1 && count != 3)
+    {
+      reply.send(num, "ERROR|AUTO_CALIB_format");
+      return;
+    }
+    const bool enabled = p[0] != 0.0f;
+    if (count == 3)
+    {
+      const int s = (int)p[1], ch = (int)p[2];
+      if (s < 0 || s >= 2 || ch < 0 || ch >= 4)
+      {
+        reply.send(num, "ERROR|Invalid_channel");
+        return;
+      }
+      det[s][ch].setAutoReanchorEnabled(enabled);
+    }
+    else
+    {
+      for (int s = 0; s < 2; ++s)
+        for (int ch = 0; ch < 4; ++ch)
+          det[s][ch].setAutoReanchorEnabled(enabled);
+    }
+    PersistentConfig::saveDetectorConfigs();
+    reply.send(num, enabled ? "AUTO_CALIB|ENABLED" : "AUTO_CALIB|DISABLED");
+  }
   else if (cmd.startsWith("GET_CALIB_STATUS"))
   {
+    if (cmd.startsWith("GET_CALIB_STATUS|"))
+    {
+      float p[2] = {};
+      if (parsePipeFloats(cmd.substring(17), p, 2) != 2)
+      {
+        reply.send(num, "ERROR|GET_CALIB_STATUS_format");
+        return;
+      }
+      const int s = (int)p[0], ch = (int)p[1];
+      if (s < 0 || s >= 2 || ch < 0 || ch >= 4)
+      {
+        reply.send(num, "ERROR|Invalid_channel");
+        return;
+      }
+      char detail[512];
+      int pos = snprintf(detail, sizeof(detail), "CALIB_STATUS_DETAIL|%s|", det[s][ch].id());
+      det[s][ch].buildDetailedCalibStatus(detail + pos, sizeof(detail) - pos);
+      reply.send(num, detail);
+      return;
+    }
     char msg[1024];
     int pos = 0;
     pos += snprintf(msg + pos, sizeof(msg) - pos, "CALIB_STATUS");

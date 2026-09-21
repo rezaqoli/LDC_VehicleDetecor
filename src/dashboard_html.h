@@ -24,6 +24,7 @@ th, td { border: 1px solid #d9dde2; padding: 7px; text-align: center; }
 th { background: #eef3f8; }
 .status-connected { color: #198754; font-weight: bold; }
 .status-disconnected { color: #dc3545; font-weight: bold; }
+.status-warning { color: #b26a00; font-weight: bold; }
 .system-status { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 14px; padding:10px; background:#fff; border-radius:8px; box-shadow:0 1px 5px rgba(0,0,0,.08); }
 .system-status .item { font-size:12px; padding:4px 8px; border-radius:5px; background:#eef3f8; }
 .event-log { height: 260px; overflow-y: auto; background: #13212f; color: #8ff4a2; padding: 10px; font-family: Consolas, monospace; font-size: 12px; border-radius: 8px; }
@@ -73,6 +74,29 @@ th { background: #eef3f8; }
   <button onclick="sendCmd('GET_CPU')">Get CPU</button>
   <button onclick="refreshAllData()">Refresh All</button>
   <button class="danger" onclick="if(confirm('Reboot ESP?')) sendCmd('RESET')">🔄 RESET</button>
+</div>
+
+<div class="card">
+  <h2>Adaptive Calibration</h2>
+  <div class="row">
+    <label>All channels:</label>
+    <button onclick="sendAutoCalib(true, false)">Enable Auto</button>
+    <button class="danger" onclick="sendAutoCalib(false, false)">Disable Auto</button>
+    <span>Last command: <b id="autoCalibState">Unknown</b></span>
+  </div>
+  <div class="row">
+    <label for="calib_status_sensor">Sensor:</label>
+    <select id="calib_status_sensor"><option value="0">1</option><option value="1">2</option></select>
+    <label for="calib_status_channel">Channel:</label>
+    <select id="calib_status_channel"><option>0</option><option>1</option><option>2</option><option>3</option></select>
+    <button onclick="sendAutoCalib(true, true)">Enable Channel</button>
+    <button class="danger" onclick="sendAutoCalib(false, true)">Disable Channel</button>
+    <button onclick="getDetailedCalibStatus()">Detailed Status</button>
+  </div>
+  <table id="calibStatusTable">
+    <tr><th>Channel</th><th>Health</th><th>State</th><th>Baseline</th><th>Noise</th><th>Drift</th><th>Confidence</th><th>Shadow</th><th>Offset</th><th>Stable</th><th>Auto</th></tr>
+  </table>
+  <p class="small">Automatic re-anchoring observes a stable 15-second shadow window without interrupting vehicle detection.</p>
 </div>
 
 <div class="card">
@@ -437,6 +461,16 @@ function sendLC() {
 function sendChannelCalibration(sensor, ch) {
   sendCmd('CALIBRATE_CHANNEL|' + sensor + '|' + ch);
 }
+function sendAutoCalib(enabled, channelOnly) {
+  let cmd = 'AUTO_CALIB|' + (enabled ? '1' : '0');
+  if (channelOnly) {
+    cmd += '|' + el('calib_status_sensor').value + '|' + el('calib_status_channel').value;
+  }
+  sendCmd(cmd);
+}
+function getDetailedCalibStatus() {
+  sendCmd('GET_CALIB_STATUS|' + el('calib_status_sensor').value + '|' + el('calib_status_channel').value);
+}
 function sendThreshold() {
   sendCmd('SET_THRESHOLD|' + el('th_param').value + '|' + el('th_val').value);
 }
@@ -504,6 +538,7 @@ function refreshAllData() {
   sendCmd('GET_CPU');
   sendCmd('GET_CONFIG');
   sendCmd('GET_WS_DATA_STREAM');
+  sendCmd('GET_CALIB_STATUS');
 }
 
 // -------------------- Message parser --------------------
@@ -534,6 +569,15 @@ function handleMessage(data) {
   } else if (data.startsWith('NOISE')) {
     parseNoise(data);
   } else if (data.startsWith('CALIBRATION_STARTED')) {
+    log('[Ack] ' + data);
+  } else if (data.startsWith('CALIBRATION_APPLIED') || data.startsWith('CALIBRATION_REJECTED') || data.startsWith('AUTO_RECALIBRATED')) {
+    log('[Calib] ' + data);
+    sendCmd('GET_CALIB_STATUS');
+  } else if (data.startsWith('AUTO_CALIB|')) {
+    const enabled = data.endsWith('|ENABLED');
+    const state = el('autoCalibState');
+    state.innerText = enabled ? 'Enabled' : 'Disabled';
+    state.className = enabled ? 'status-connected' : 'status-warning';
     log('[Ack] ' + data);
   } else if (data.startsWith('TRAFFIC_REPORT')) {
     parseTrafficReport(data);
@@ -814,9 +858,72 @@ function parseRulesAck(data) {
 }
 
 // -------- CALIB_STATUS --------
+const calibStatusData = {};
+
+function ensureCalibStatusRows() {
+  const table = el('calibStatusTable');
+  if (table.rows.length === 9) return;
+  while (table.rows.length > 1) table.deleteRow(1);
+  for (let s = 0; s < 2; s++) {
+    for (let ch = 0; ch < 4; ch++) {
+      const id = 'S' + (s + 1) + 'C' + ch;
+      const row = table.insertRow();
+      row.dataset.channel = id;
+      row.innerHTML = '<td>' + id + '</td><td>---</td><td>---</td><td>---</td><td>---</td><td>---</td><td>---</td><td>---</td><td>---</td><td>---</td><td>---</td>';
+    }
+  }
+}
+
+function updateCalibStatusRow(channel, values) {
+  ensureCalibStatusRows();
+  calibStatusData[channel] = Object.assign(calibStatusData[channel] || {}, values);
+  const rows = el('calibStatusTable').rows;
+  let row = null;
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i].dataset.channel === channel) { row = rows[i]; break; }
+  }
+  if (!row) return;
+  const v = calibStatusData[channel];
+  const fields = ['health', 'state', 'baseline', 'noise', 'drift', 'conf', 'shadow', 'shadow_offset', 'stable_ms', 'auto'];
+  fields.forEach((key, idx) => {
+    if (v[key] !== undefined) row.cells[idx + 1].innerText = v[key];
+  });
+  row.cells[1].className = v.health === 'FAULT' ? 'status-disconnected' :
+                           v.health === 'DEGRADED' ? 'status-warning' : 'status-connected';
+}
+
 function parseCalibStatus(data) {
+  if (data.startsWith('CALIB_STATUS_DETAIL|')) {
+    const parts = data.split('|');
+    const channel = parts[1];
+    const values = {};
+    for (let i = 2; i < parts.length; i++) {
+      const sep = parts[i].indexOf(':');
+      if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+    }
+    updateCalibStatusRow(channel, values);
+    if (values.auto !== undefined) {
+      const state = el('autoCalibState');
+      state.innerText = values.auto === '1' ? 'Enabled' : 'Disabled';
+      state.className = values.auto === '1' ? 'status-connected' : 'status-warning';
+    }
+    log('[Calib detail] ' + channel);
+    return;
+  }
+  const parts = data.split('|');
+  for (let i = 1; i < parts.length; i++) {
+    const firstColon = parts[i].indexOf(':');
+    if (firstColon <= 0) continue;
+    const channel = parts[i].substring(0, firstColon);
+    const fields = parts[i].substring(firstColon + 1).split(',');
+    const values = {};
+    fields.forEach(field => {
+      const sep = field.indexOf(':');
+      if (sep > 0) values[field.substring(0, sep)] = field.substring(sep + 1);
+    });
+    updateCalibStatusRow(channel, values);
+  }
   log('[Calib] ' + data);
-  console.log(data);
 }
 
 // -------- LOOP_GEOMETRY --------

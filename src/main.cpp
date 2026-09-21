@@ -309,9 +309,9 @@ void setup()
       xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 5, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 4, NULL, 0) != pdPASS ||     
-      xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 3, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 6, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 1, NULL, 1) != pdPASS
+      xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 4, NULL, 1) != pdPASS
       )
   {
     Serial.println("[ERR] Failed to create task");

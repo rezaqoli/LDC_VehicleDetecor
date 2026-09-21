@@ -55,7 +55,7 @@ void releaseEventSlot(EventResult *slot)
 static void onRecalibrate(const char *id)
 {
   char msg[64];
-  snprintf(msg, sizeof(msg), "RECALIBRATE_NEEDED|%s", id);
+  snprintf(msg, sizeof(msg), "AUTO_RECALIBRATED|%s", id);
   wsSend(msg);
 }
 
@@ -129,7 +129,10 @@ void taskDetector(void *)
         {
           uint32_t val = frame.filtered[s][ch];
           if (val == 0)
+          {
+            det[s][ch].noteInvalidSample((uint32_t)(frame.ts_us / 1000));
             continue;
+          }
           if (det[s][ch].feed(val, frame.ts_us, ev))
           {
             trafficMonitorOnRawEvent(ev);
@@ -167,11 +170,15 @@ void taskDetector(void *)
           latestData.mean2[ch] = det[1][ch].baseline();
           latestData.stdDev1[ch] = det[0][ch].noiseStd();
           latestData.stdDev2[ch] = det[1][ch].noiseStd();
-          latestData.anomalyScore1[ch] = 0;
-          latestData.anomalyScore2[ch] = 0;
-          strncpy(latestData.status1[ch], "OK", sizeof(latestData.status1[ch]) - 1);
+          latestData.anomalyScore1[ch] = (uint8_t)fminf(100.0f, fabsf(det[0][ch].currentAnomaly()) * 100000.0f);
+          latestData.anomalyScore2[ch] = (uint8_t)fminf(100.0f, fabsf(det[1][ch].currentAnomaly()) * 100000.0f);
+          const char *status1 = det[0][ch].health() == SensorHealth::FAULT ? "FAULT" :
+                                det[0][ch].health() == SensorHealth::DEGRADED ? "DEGRAD" : "OK";
+          const char *status2 = det[1][ch].health() == SensorHealth::FAULT ? "FAULT" :
+                                det[1][ch].health() == SensorHealth::DEGRADED ? "DEGRAD" : "OK";
+          strncpy(latestData.status1[ch], status1, sizeof(latestData.status1[ch]) - 1);
           latestData.status1[ch][sizeof(latestData.status1[ch]) - 1] = '\0';
-          strncpy(latestData.status2[ch], "OK", sizeof(latestData.status2[ch]) - 1);
+          strncpy(latestData.status2[ch], status2, sizeof(latestData.status2[ch]) - 1);
           latestData.status2[ch][sizeof(latestData.status2[ch]) - 1] = '\0';
         }
         latestData.valid = true;

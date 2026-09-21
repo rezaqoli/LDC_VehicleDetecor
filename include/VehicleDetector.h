@@ -70,6 +70,7 @@ struct DetectorConfig
     // ========== Axle / Multi-peak detection ==========
     float peak_prominence_ratio = 0.35f;
     float min_axle_distance_ms = 80.0f;
+    // Relative signal change per second.
     float min_entry_slope = 0.0005f;
     uint32_t min_slow_enter_ms = 80;
     float peak_prominence_abs = 0.0002f;
@@ -100,6 +101,7 @@ struct DetectorConfig
     float derivative_sigma = 5.0f;
     float derivative_slow_sigma = 6.0f;
     uint32_t derivative_slow_window_ms = 600;
+    bool auto_reanchor_enabled = true;
 };
 
 // ============================================================
@@ -178,6 +180,11 @@ public:
     float noiseStd() const;
     float noiseRms() const;
     float noisePercent() const;
+    float currentAnomaly() const;
+    bool activitySuspected() const;
+    void noteInvalidSample(uint32_t now_ms);
+    void setAutoReanchorEnabled(bool enabled);
+    bool autoReanchorEnabled() const;
 
     void reclassify(EventResult &ev);
     void classify(EventResult &ev);
@@ -190,6 +197,7 @@ public:
     float driftScore() const;
     SensorHealth health() const;
     void buildCalibStatus(char *buf, size_t bufSize) const;
+    void buildDetailedCalibStatus(char *buf, size_t bufSize) const;
 
 private:
     DetectorConfig cfg_;
@@ -211,6 +219,10 @@ private:
     float noise_std_ = 0.0f;
     float noise_rms_ = 0.0f;
     float baseline_ = 0;
+    float effective_enter_thresh_ = 0.0008f;
+    float effective_absolute_min_dev_ = 0.0003f;
+    float current_anomaly_ = 0.0f;
+    bool activity_suspected_ = false;
     float filtered_val_ = 0.0f;
     float prev_filtered_ = 0.0f;
     uint32_t prev_filtered_us_ = 0;
@@ -221,6 +233,7 @@ private:
     bool derivative_candidate_ = false;
     float derivative_candidate_floor_ = 0.0f;
     uint32_t sustained_dev_cnt_ = 0;
+    uint32_t slow_dev_start_us_ = 0;
     uint32_t warmup_cnt_ = 0;
     uint32_t above_thresh_count_ = 0;
 
@@ -234,7 +247,8 @@ private:
     static float clampf(float v, float lo, float hi);
     void finishCalibration();
     float smoothInput(float val);
-    void update_baseline(float val);
+    void syncCalibration(CalibrationUpdate update, uint32_t now_ms);
+    void resetFilterHistory(float seed);
     void extract_features(uint32_t end_us, EventResult &ev);
     void reset_state(DetectorState s);
     void reset_entry_tracking();
