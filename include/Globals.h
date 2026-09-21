@@ -133,3 +133,4 @@ extern IPAddress mqttServerIp;
 // Detection pause flag — single-writer (any task), multi-reader
 // ============================================================
 extern volatile bool g_detectionPaused;
+extern volatile bool dataStreamOnWs;

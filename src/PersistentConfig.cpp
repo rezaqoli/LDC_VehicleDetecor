@@ -165,6 +165,22 @@ bool PersistentConfig::getUint(const char *key, uint32_t *out, uint32_t defaultV
     return true;
 }
 
+bool PersistentConfig::getWsDataStreamEnabled(bool *out, bool defaultVal)
+{
+    if (!out)
+        return false;
+
+    uint32_t value = 0;
+    bool ok = getUint("ws_data_stream", &value, defaultVal ? 1u : 0u);
+    *out = value != 0;
+    return ok;
+}
+
+bool PersistentConfig::setWsDataStreamEnabled(bool enabled)
+{
+    return setUint("ws_data_stream", enabled ? 1u : 0u);
+}
+
 // MQTT-specific
 bool PersistentConfig::getMqttClientId(char *out, size_t maxLen)
 {
@@ -832,6 +848,7 @@ bool PersistentConfig::saveAllConfigs()
     success &= saveTrafficRules();
     success &= saveReportConfig();
     success &= saveLoopGeometry();
+    success &= setWsDataStreamEnabled(dataStreamOnWs);
     return success;
 }
 
@@ -848,6 +865,10 @@ bool PersistentConfig::loadAllConfigs()
     success &= loadTrafficRules();
     success &= loadReportConfig();
     success &= loadLoopGeometry();
+    bool wsDataStreamEnabled = true;
+    if (!getWsDataStreamEnabled(&wsDataStreamEnabled, true))
+        success = false;
+    dataStreamOnWs = wsDataStreamEnabled;
     success &= loadConfig(mqttClientId, mqttServer, mqttServerIp, &mqttPort, mqttUser, mqttPass, lte_apn,
                            mqttTopicEvents, mqttTopicCommands, mqttTopicCommandResponses);
     return success;

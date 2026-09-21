@@ -944,6 +944,32 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
              g_report_cfg.periodic_clear ? 1 : 0);
     reply.send(num, msg);
   }
+  else if (cmd == "GET_WS_DATA_STREAM")
+  {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "WS_DATA_STREAM|on:%d",
+             dataStreamOnWs ? 1 : 0);
+    reply.send(num, msg);
+  }
+  else if (cmd.startsWith("SET_WS_DATA_STREAM|"))
+  {
+    String value = cmd.substring(19);
+    value.trim();
+    if (value != "0" && value != "1")
+    {
+      reply.send(num, "WS_DATA_STREAM_ERROR|bad_value");
+      return;
+    }
+
+    bool enabled = value == "1";
+    dataStreamOnWs = enabled;
+    bool saved = PersistentConfig::setWsDataStreamEnabled(enabled);
+    char msg[80];
+    snprintf(msg, sizeof(msg),
+             "WS_DATA_STREAM_ACK|on:%d|saved:%d",
+             enabled ? 1 : 0, saved ? 1 : 0);
+    reply.send(num, msg);
+  }
   else if (cmd == "GET_DEFAULT_KMH")
   {
     DetectorConfig cfg = det[0][0].getConfig();

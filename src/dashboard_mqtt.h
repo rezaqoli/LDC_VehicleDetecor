@@ -203,10 +203,54 @@ function sendCmd(c){
 }
 
 function publishTest(){
-  // Just push a marker to the log; actual MQTT publish still needs ESP flow
   const t = el('pub_topic').value;
   const p = el('pub_payload').value;
   pushLine('out', '[TEST] would publish to ' + t + ' : ' + p);
+}
+
+function parseEvent(data){
+  const parts = data.split('|');
+  if (parts.length < 2) return;
+
+  const channel = parts[1] || 'unknown';
+  const values = {};
+  if (parts.length > 2 && parts[2].indexOf(':') > 0) {
+    for (let i = 2; i < parts.length; i++) {
+      const sep = parts[i].indexOf(':');
+      if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+    }
+  } else if (parts.length >= 7) {
+    values.start = parts[2];
+    values.end = parts[3];
+    values.dur = parts[4];
+    values.class = parts[5];
+    values.len = parts[6];
+  } else {
+    return;
+  }
+
+  const vehicleClass = values.class || values.vehicleClass || values.cls || '--';
+  const duration = values.dur || '--';
+  const length = values.len || '--';
+  pushLine('out', '[Event] ' + channel + ' class=' + vehicleClass + ' dur=' + duration + 'ms len=' + length + 'm');
+}
+
+function parseSpeedMessage(data){
+  const parts = data.split('|');
+  const values = {};
+  for (let i = 1; i < parts.length; i++) {
+    const sep = parts[i].indexOf(':');
+    if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+  }
+
+  const idx = Number(values.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
+
+  const speed = values.speed || '0';
+  if (!data.startsWith('SPEED_STATE|')) {
+    pushLine('out', '🏁 SPEED pair ' + idx + ': ' + speed + ' km/h, ' +
+      (values.type || '--') + ', len=' + (values.len || '0') + 'm');
+  }
 }
 
 function handleMessage(d){
@@ -255,7 +299,7 @@ function handleMessage(d){
   }
 
   if (d.startsWith('EVENT|')) {
-    pushLine('out', '[OUT→MQTT] ' + d);
+    parseEvent(d);
   } else if (d.startsWith('TRAFFIC_REPORT')) {
     pushLine('out', '[OUT→MQTT] ' + d);
     parseTrafficReport(d);
@@ -270,7 +314,7 @@ function handleMessage(d){
   } else if (d.startsWith('ERROR')) {
     pushLine('err', '[ERR] ' + d);
   } else if (d.startsWith('SPEED|') || d.startsWith('SPEED_STATE|')) {
-    pushLine('out', '[OUT→MQTT] ' + d);
+    parseSpeedMessage(d);
   } else {
     pushLine('sys', '[SYS] ' + d);
   }

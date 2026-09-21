@@ -175,12 +175,60 @@ function updateSystemStatus(msg){
   });
 }
 
+function parseEvent(data){
+  const parts = data.split('|');
+  if (parts.length < 2) return;
+
+  const channel = parts[1] || 'unknown';
+  const values = {};
+  if (parts.length > 2 && parts[2].indexOf(':') > 0) {
+    for (let i = 2; i < parts.length; i++) {
+      const sep = parts[i].indexOf(':');
+      if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+    }
+  } else if (parts.length >= 7) {
+    values.start = parts[2];
+    values.end = parts[3];
+    values.dur = parts[4];
+    values.class = parts[5];
+    values.len = parts[6];
+  } else {
+    return;
+  }
+
+  const vehicleClass = values.class || values.vehicleClass || values.cls || '--';
+  const duration = values.dur || '--';
+  const length = values.len || '--';
+  log('[Event] ' + channel + ' class=' + vehicleClass + ' dur=' + duration + 'ms len=' + length + 'm');
+}
+
+function parseSpeedMessage(data){
+  const parts = data.split('|');
+  const values = {};
+  for (let i = 1; i < parts.length; i++) {
+    const sep = parts[i].indexOf(':');
+    if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+  }
+
+  const idx = Number(values.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
+
+  const speed = values.speed || '0';
+  if (!data.startsWith('SPEED_STATE|')) {
+    log('🏁 SPEED pair ' + idx + ': ' + speed + ' km/h, ' +
+      (values.type || '--') + ', len=' + (values.len || '0') + 'm');
+  }
+}
+
 function parse(msg){
   if (msg.startsWith('SYSTEM_STATUS|')){
     updateSystemStatus(msg);
   } else if (msg.startsWith('SENSOR_DATA|')){
-    // High-rate stream — ignore in log
     return;
+  } else if (msg.startsWith('EVENT|')){
+    parseEvent(msg);
+  } else if (msg.startsWith('SPEED|') || msg.startsWith('SPEED_STATE|')){
+    parseSpeedMessage(msg);
   } else if (msg.startsWith('WIFI|')){
     const p = msg.split('|');
     el('ssid').value = p[1] || '-';

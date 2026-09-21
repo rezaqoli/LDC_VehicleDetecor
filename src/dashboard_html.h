@@ -53,6 +53,15 @@ th { background: #eef3f8; }
 </div>
 
 <div class="card">
+  <h2>WebSocket Data Stream</h2>
+  <div class="row">
+    <label for="wsDataStreamToggle">Sensor data stream:</label>
+    <input type="checkbox" id="wsDataStreamToggle" onchange="setWsDataStream(this.checked)">
+    <span id="wsDataStreamStatus" class="status-disconnected">Loading...</span>
+  </div>
+</div>
+
+<div class="card">
   <h2>⚙️ System Commands</h2>
   <button onclick="sendCmd('CALIBRATE')">Calibrate</button>
   <button onclick="sendCmd('GET_CONFIG')">Get Config</button>
@@ -404,6 +413,21 @@ function sendCmd(cmd) {
   }
 }
 
+function setWsDataStream(enabled) {
+  sendCmd('SET_WS_DATA_STREAM|' + (enabled ? '1' : '0'));
+}
+
+function updateWsDataStream(data) {
+  const parts = data.split('|');
+  const enabled = parts[1] === 'on:1';
+  const checkbox = el('wsDataStreamToggle');
+  const status = el('wsDataStreamStatus');
+  if (checkbox) checkbox.checked = enabled;
+  if (!status) return;
+  status.innerText = enabled ? 'Enabled' : 'Disabled';
+  status.className = enabled ? 'status-connected' : 'status-disconnected';
+}
+
 // -------------------- Senders --------------------
 function sendLC() {
   sendCmd('SET_LC|' + el('lc_s').value + '|' + el('lc_ch').value + '|' + el('lc_l').value + '|' + el('lc_c').value);
@@ -474,6 +498,7 @@ function refreshAllData() {
   sendCmd('GET_SPEED_STATE');
   sendCmd('GET_CPU');
   sendCmd('GET_CONFIG');
+  sendCmd('GET_WS_DATA_STREAM');
 }
 
 // -------------------- Message parser --------------------
@@ -490,6 +515,11 @@ function handleMessage(data) {
     parseConfig(data);
   } else if (data.startsWith('STATUS')) {
     parseStatus(data);
+  } else if (data.startsWith('WS_DATA_STREAM_ACK|')) {
+    updateWsDataStream(data);
+    log('[Ack] ' + data);
+  } else if (data.startsWith('WS_DATA_STREAM|')) {
+    updateWsDataStream(data);
   } else if (data.startsWith('CONFIG_ACK|')) {
     parseConfigAck(data);
   } else if (data.startsWith('CPU_ACK|')) {
@@ -606,55 +636,70 @@ function updateSensorTable() {
 
 // -------- EVENT --------
 function parseEvent(data) {
-  // EVENT|channel|start|end|duration|class|length?
-  // from reportEvent format: we need to deduce. In main.cpp reportEvent sends: "EVENT|%s|%lu|%lu|%.0f|%s|%.2f"
-  // Actually reportEvent in VehicleDetector.cpp sends: "EVENT|%s|%lu|%lu|%.0f|%s|%.2f"
   const parts = data.split('|');
-  if (parts.length < 7) return;
-  const channel = parts[1];
-  const start = parts[2];
-  const end = parts[3];
-  const dur = parts[4];
-  const cls = parts[5];
-  const len = parts[6];
-  // log(`🚗 EVENT ${channel}  class:${cls}  len:${len}m  dur:${dur}ms  [${start}→${end}]`);
-  log(data);
+  if (parts.length < 2) return;
+
+  const channel = parts[1] || 'unknown';
+  const values = {};
+  if (parts.length > 2 && parts[2].indexOf(':') > 0) {
+    for (let i = 2; i < parts.length; i++) {
+      const sep = parts[i].indexOf(':');
+      if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+    }
+  } else if (parts.length >= 7) {
+    values.start = parts[2];
+    values.end = parts[3];
+    values.dur = parts[4];
+    values.class = parts[5];
+    values.len = parts[6];
+  } else {
+    return;
+  }
+
+  const vehicleClass = values.class || values.vehicleClass || values.cls || '--';
+  const duration = values.dur || values.duration || '--';
+  const length = values.len || values.length || '--';
+  log('[Event] ' + channel + ' class=' + vehicleClass + ' dur=' + duration + 'ms len=' + length + 'm');
 }
 
 // -------- SPEED messages --------
 function parseSpeedMessage(data) {
-  // SPEED|idx:0|speed:45.2|len:4.8|type:Car|delay:12.34|dist:0.40|a:S1C0|b:S2C0
-  // or SPEED_STATE|idx:0|valid:1|speed:...
   const parts = data.split('|');
   const values = {};
   for (let i = 1; i < parts.length; i++) {
-    const kv = parts[i].split(':');
-    if (kv.length === 2) values[kv[0]] = kv[1];
+    const sep = parts[i].indexOf(':');
+    if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
   }
-  if (values.idx === undefined) return;
-  const idx = parseInt(values.idx);
-  if (isNaN(idx) || idx < 0 || idx > 3) return;
+
+  const idx = Number(values.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
 
   const speedCell = el('sp' + idx + '_speed');
   if (speedCell) {
-    if (data.startsWith('SPEED_STATE|')) {
-      if (values.valid === '1') {
-        speedCell.innerText = (values.speed || '0') + ' km/h';
-      } else {
-        speedCell.innerText = '-';
-      }
+    if (data.startsWith('SPEED_STATE|') && values.valid === '0') {
+      speedCell.innerText = '-';
     } else {
-      speedCell.innerText = (values.speed || '0') + ' km/h - ' + (values.len || '0') + 'm';
-      log(`🏁 SPEED pair ${idx}: ${values.speed} km/h, ${values.type}, len=${values.len}m`);
+      const speed = values.speed || '0';
+      speedCell.innerText = data.startsWith('SPEED_STATE|')
+        ? speed + ' km/h'
+        : speed + ' km/h - ' + (values.len || '0') + 'm';
     }
   }
 
   if (idx === 0) {
     const statusDiv = el('dualStatus');
-    if (values.dual !== undefined) {
+    if (statusDiv && values.dual !== undefined) {
       const dualOn = values.dual === '1';
-      statusDiv.innerHTML = `🟢 Pair 0 ${dualOn ? 'ON' : 'OFF'} | Speed: ${values.speed || '--'} km/h | Type: ${values.type || '--'} | Delay: ${values.delay || '--'} ms`;
+      statusDiv.innerHTML = '🟢 Pair 0 ' + (dualOn ? 'ON' : 'OFF') +
+        ' | Speed: ' + (values.speed || '--') + ' km/h' +
+        ' | Type: ' + (values.type || '--') +
+        ' | Delay: ' + (values.delay || '--') + ' ms';
     }
+  }
+
+  if (!data.startsWith('SPEED_STATE|')) {
+    log('🏁 SPEED pair ' + idx + ': ' + (values.speed || '0') + ' km/h, ' +
+      (values.type || '--') + ', len=' + (values.len || '0') + 'm');
   }
 }
 

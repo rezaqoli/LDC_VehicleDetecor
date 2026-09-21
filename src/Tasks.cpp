@@ -389,7 +389,7 @@ void taskWsLoop(void *)
     }
 
     TickType_t now = xTaskGetTickCount();
-    if ((now - lastSensorSend) >= sensorPeriod)
+    if (dataStreamOnWs && (now - lastSensorSend) >= sensorPeriod)
     {
       lastSensorSend = now;
       if (xSemaphoreTake(dataMutex, pdMS_TO_TICKS(2)) == pdTRUE)

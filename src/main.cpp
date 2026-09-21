@@ -82,6 +82,7 @@ QueueHandle_t wsTxQueue;
 QueueHandle_t freeWsMsgQueue;
 SemaphoreHandle_t i2c0Mutex, i2c1Mutex, wsMutex;
 SemaphoreHandle_t dataMutex;
+volatile bool dataStreamOnWs = true;
 
 EventResult eventPool[EVENT_POOL_SIZE];
 uint8_t eventPoolRefs[EVENT_POOL_SIZE];
@@ -212,14 +213,15 @@ void setup()
     speedState[i].last_type[sizeof(speedState[i].last_type) - 1] = '\0';
   }
 
-  //WiFi.mode(WIFI_AP);
-  //WiFi.softAP("ESP-AP", NULL);
+  WiFi.setHostname(DEVICE_HOSTNAME);
+  WiFi.mode(WIFI_AP);
+  WiFi.softAP("ESP-AP", NULL);
   IPAddress ip(192, 168, 100, 232);
   IPAddress gateway(192, 168, 100, 1);
   IPAddress subnet(255, 255, 255, 0);
   //WiFi.config(ip, gateway, subnet);
-  WiFi.setHostname(DEVICE_HOSTNAME);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  //WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.printf("[WiFi] Connecting to %s ...\n", WIFI_SSID);
   Serial.printf("[WiFi] http://%s\n", WiFi.localIP().toString().c_str());
   Serial.printf("[WiFi] mDNS hostname: %s.local\n", DEVICE_HOSTNAME);
@@ -309,7 +311,7 @@ void setup()
       xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 4, NULL, 0) != pdPASS ||     
       xTaskCreatePinnedToCore(taskLTEInit,            "LTE-Init", 8192, NULL, 1, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskLTEStatusMonitor, "LTE-Monitor", 4096, NULL, 6, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 3, NULL, 1) != pdPASS
+      xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 1, NULL, 1) != pdPASS
       )
   {
     Serial.println("[ERR] Failed to create task");

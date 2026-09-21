@@ -348,6 +348,62 @@ function sendRules(){
     el('rule_straddle_ms').value + '|' + el('rule_straddle_ratio').value + '|' + el('rule_assume').value);
 }
 
+function parseEvent(data){
+  const parts = data.split('|');
+  if (parts.length < 2) return;
+
+  const channel = parts[1] || 'unknown';
+  const values = {};
+  if (parts.length > 2 && parts[2].indexOf(':') > 0) {
+    for (let i = 2; i < parts.length; i++) {
+      const sep = parts[i].indexOf(':');
+      if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+    }
+  } else if (parts.length >= 7) {
+    values.start = parts[2];
+    values.end = parts[3];
+    values.dur = parts[4];
+    values.class = parts[5];
+    values.len = parts[6];
+  } else {
+    return;
+  }
+
+  const vehicleClass = values.class || values.vehicleClass || values.cls || '--';
+  const duration = values.dur || '--';
+  const length = values.len || '--';
+  log('[Event] ' + channel + ' class=' + vehicleClass + ' dur=' + duration + 'ms len=' + length + 'm');
+}
+
+function parseSpeedMessage(data){
+  const parts = data.split('|');
+  const values = {};
+  for (let i = 1; i < parts.length; i++) {
+    const sep = parts[i].indexOf(':');
+    if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
+  }
+
+  const idx = Number(values.idx);
+  if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
+
+  const speedCell = el('lp_' + idx + '_speed');
+  if (speedCell) {
+    if (data.startsWith('SPEED_STATE|') && values.valid === '0') {
+      speedCell.innerText = '-';
+    } else {
+      const speed = values.speed || '0';
+      speedCell.innerText = data.startsWith('SPEED_STATE|')
+        ? speed + ' km/h'
+        : speed + ' km/h - ' + (values.len || '0') + 'm';
+    }
+  }
+
+  if (!data.startsWith('SPEED_STATE|')) {
+    log('🏁 SPEED pair ' + idx + ': ' + (values.speed || '0') + ' km/h, ' +
+      (values.type || '--') + ', len=' + (values.len || '0') + 'm');
+  }
+}
+
 function handleMessage(d){
   if (d.startsWith('SYSTEM_STATUS|')) {
     updateSystemStatus(d);
@@ -411,22 +467,10 @@ function handleMessage(d){
       if (vals.c2 !== undefined) el('lp_' + idx + '_c2').value = vals.c2;
     }
     log('✅ Loop cfg applied');
+  } else if (d.startsWith('EVENT|')) {
+    parseEvent(d);
   } else if (d.startsWith('SPEED_STATE|') || d.startsWith('SPEED|')) {
-    const vals = {};
-    d.split('|').slice(1).forEach(kv => {
-      const x = kv.split(':');
-      if (x.length === 2) vals[x[0]] = x[1];
-    });
-    if (vals.idx !== undefined) {
-      const i = parseInt(vals.idx);
-      if (i >= 0 && i < 4) {
-        if (d.startsWith('SPEED_STATE|') && vals.valid === '1') {
-          el('lp_' + i + '_speed').innerText = (vals.speed || '0') + ' km/h';
-        } else if (!d.startsWith('SPEED_STATE|')) {
-          el('lp_' + i + '_speed').innerText = (vals.speed || '0') + ' km/h';
-        }
-      }
-    }
+    parseSpeedMessage(d);
   } else if (d.startsWith('RULES_ACK')) {
     // RULES_ACK|limit:...|tol:...
     const vals = {};
