@@ -25,7 +25,12 @@ VehicleDetector::VehicleDetector(const char *id, DetectorConfig cfg)
 // ============================================================
 // Public Accessors
 // ============================================================
-void VehicleDetector::setConfig(const DetectorConfig &c) { cfg_ = c; }
+void VehicleDetector::setConfig(const DetectorConfig &c)
+{
+    if (cfg_.entry_mode != c.entry_mode)
+        reset_entry_tracking();
+    cfg_ = c;
+}
 DetectorConfig VehicleDetector::getConfig() const { return cfg_; }
 void VehicleDetector::setDualLoopMode(bool enabled) { dual_loop_mode_ = enabled; }
 bool VehicleDetector::isDualLoopMode() const { return dual_loop_mode_; }
@@ -79,8 +84,9 @@ void VehicleDetector::finishCalibration()
     if (noise_rms_ < 1e-6f)
         noise_rms_ = noise_std_;
 
-    // Sync calibrator with initial calibration results
-    calibrator_.begin(millis());
+    // Seed the adaptive calibrator with the initial calibration. Calling
+    // begin() here used to erase these values, leaving it unable to adapt.
+    calibrator_.setCalibrationResult(baseline_, noise_std_, noise_rms_, millis());
 
     if (cfg_.auto_threshold)
     {
@@ -181,9 +187,24 @@ void VehicleDetector::reset_state(DetectorState s)
     signal_cnt_ = 0;
     exit_counter_ = 0;
     above_thresh_count_ = 0;
+    sustained_dev_cnt_ = 0;
     ev_start_us_ = 0;
     ev_peak_us_ = 0;
     ev_peak_dev_ = 0;
+    reset_entry_tracking();
+}
+
+void VehicleDetector::reset_entry_tracking()
+{
+    derivative_initialized_ = false;
+    prev_filtered_us_ = 0;
+    derivative_origin_dev_ = 0.0f;
+    derivative_origin_us_ = 0;
+    derivative_rise_samples_ = 0;
+    derivative_candidate_ = false;
+    derivative_candidate_floor_ = 0.0f;
+    above_thresh_count_ = 0;
+    sustained_dev_cnt_ = 0;
 }
 
 // ============================================================
@@ -238,36 +259,107 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
 
     case DetectorState::IDLE:
     {
-        calibrator_.onSample(val, ts_us / 1000, false);
         update_baseline(val);
         float filtered = smoothInput(val);
         if (baseline_ <= 1e-6f)
             return false;
         float dev = (filtered - baseline_) / baseline_;
 
-        // slope in dev per ms (5ms per sample)
-        float slope = fabsf(filtered - prev_filtered_) / 5.0f;
-        prev_filtered_ = filtered;
+        bool enter_condition = false;
+        const bool derivative_mode = (cfg_.entry_mode == EntryDetectionMode::DERIVATIVE);
 
-        // Fast entry: dev above threshold and slope sufficiently steep
-        bool fast_entry = (dev >= cfg_.enter_thresh && dev >= cfg_.absolute_min_dev && slope >= cfg_.min_entry_slope);
-
-        // Slow entry: sustained deviation above absolute_min_dev for configured time
-        if (dev >= cfg_.absolute_min_dev && dev < cfg_.enter_thresh)
+        if (!derivative_mode)
         {
-            sustained_dev_cnt_++;
+            // Preserve the original baseline-threshold detector.
+            float dt_ms = (prev_filtered_us_ != 0 && ts_us > prev_filtered_us_)
+                              ? (ts_us - prev_filtered_us_) / 1000.0f
+                              : 5.0f;
+            float slope = fabsf(filtered - prev_filtered_) / fmaxf(dt_ms, 0.001f);
+            bool fast_entry = (dev >= cfg_.enter_thresh && dev >= cfg_.absolute_min_dev &&
+                               slope >= cfg_.min_entry_slope);
+
+            if (dev >= cfg_.absolute_min_dev && dev < cfg_.enter_thresh)
+                sustained_dev_cnt_++;
+            else
+                sustained_dev_cnt_ = 0;
+
+            bool slow_entry = (sustained_dev_cnt_ * dt_ms >= cfg_.min_slow_enter_ms) &&
+                              (dev >= cfg_.absolute_min_dev);
+            enter_condition = fast_entry || slow_entry;
+        }
+        else if (!derivative_initialized_)
+        {
+            // The first filtered sample only initializes the differentiator;
+            // otherwise startup would look like a very large rising edge.
+            derivative_initialized_ = true;
+            derivative_origin_dev_ = dev;
+            derivative_origin_us_ = ts_us;
+            derivative_rise_samples_ = 1;
         }
         else
         {
-            sustained_dev_cnt_ = 0;
-        }
-        bool slow_entry = (sustained_dev_cnt_ * 5 >= cfg_.min_slow_enter_ms) && (dev >= cfg_.absolute_min_dev);
+            const float adaptive_rms = calibrator_.noiseRms() > 1e-6f
+                                           ? calibrator_.noiseRms()
+                                           : noise_rms_;
+            // noise_rms is the underlying sample noise estimate. sqrt(2)
+            // converts it to the standard deviation of adjacent differences.
+            // One raw count is retained as a floor for a perfectly quiet,
+            // quantized calibration signal.
+            const float diff_noise_dev = fmaxf(1.41421356f * adaptive_rms / baseline_,
+                                               1.0f / baseline_);
+            const float delta_dev = (filtered - prev_filtered_) / baseline_;
+            const uint32_t rise_ms = (ts_us - derivative_origin_us_) / 1000;
 
-        bool enter_condition = fast_entry || slow_entry;
+            if (delta_dev < -diff_noise_dev ||
+                rise_ms > cfg_.derivative_slow_window_ms ||
+                dev < derivative_origin_dev_)
+            {
+                derivative_origin_dev_ = dev;
+                derivative_origin_us_ = ts_us;
+                derivative_rise_samples_ = 1;
+            }
+            else
+            {
+                derivative_rise_samples_++;
+            }
+
+            const float net_rise = dev - derivative_origin_dev_;
+            const float sharp_threshold = cfg_.derivative_sigma * diff_noise_dev;
+            const float slow_threshold = cfg_.derivative_slow_sigma * diff_noise_dev *
+                                         sqrtf((float)derivative_rise_samples_);
+            const bool sharp_entry = delta_dev >= sharp_threshold;
+            const bool slow_entry = rise_ms >= cfg_.min_slow_enter_ms &&
+                                    net_rise >= slow_threshold;
+
+            if (!derivative_candidate_ && (sharp_entry || slow_entry))
+            {
+                derivative_candidate_ = true;
+                derivative_candidate_floor_ = derivative_origin_dev_;
+                above_thresh_count_ = 1;
+            }
+            else if (derivative_candidate_)
+            {
+                // Confirm that the rise did not immediately collapse. The
+                // initiating derivative need not repeat on a sharp step.
+                if (dev + 2.0f * diff_noise_dev >= derivative_candidate_floor_)
+                    above_thresh_count_++;
+                else
+                {
+                    derivative_candidate_ = false;
+                    above_thresh_count_ = 0;
+                }
+            }
+
+            enter_condition = derivative_candidate_;
+        }
+
+        prev_filtered_ = filtered;
+        prev_filtered_us_ = ts_us;
 
         if (enter_condition)
         {
-            above_thresh_count_++;
+            if (!derivative_mode)
+                above_thresh_count_++;
             if (above_thresh_count_ >= cfg_.confirm_samples)
             {
                 state_ = DetectorState::IN_EVENT;
@@ -280,12 +372,18 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
                 above_thresh_count_ = 0;
                 signal_[signal_cnt_++] = dev;
                 sustained_dev_cnt_ = 0;
+                derivative_candidate_ = false;
             }
         }
         else
         {
             above_thresh_count_ = 0;
         }
+        // Update adaptive statistics after making the entry decision, so the
+        // leading edge cannot raise its own derivative threshold. Once entry
+        // is confirmed, mark this sample active to keep it out of quiet noise.
+        calibrator_.onSample(val, ts_us / 1000,
+                             state_ == DetectorState::IN_EVENT || derivative_candidate_);
         return false;
     }
 
@@ -308,10 +406,19 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
         }
 
         uint32_t elapsed_ms = (ts_us - ev_start_us_) / 1000;
-        float exit_level = fmaxf(ev_peak_dev_ * cfg_.exit_ratio, cfg_.enter_thresh * cfg_.exit_hysteresis_ratio);
+        const bool derivative_mode = (cfg_.entry_mode == EntryDetectionMode::DERIVATIVE);
+        // Use the stable calibration deviation for exit. The adaptive
+        // calibrator may have observed part of a slow ramp before entry was
+        // confirmed, which must not be allowed to lift the exit floor.
+        const float derivative_exit_floor = cfg_.abs_sigma * noise_std_ / baseline_;
+        float exit_level = derivative_mode
+                               ? fmaxf(ev_peak_dev_ * cfg_.exit_ratio, derivative_exit_floor)
+                               : fmaxf(ev_peak_dev_ * cfg_.exit_ratio,
+                                       cfg_.enter_thresh * cfg_.exit_hysteresis_ratio);
         bool exit_condition = (dev < exit_level);
         bool duration_ok = (elapsed_ms >= cfg_.min_event_ms);
-        bool peak_ok = (ev_peak_dev_ >= cfg_.enter_thresh && ev_peak_dev_ >= cfg_.absolute_min_dev);
+        bool peak_ok = derivative_mode ||
+                       (ev_peak_dev_ >= cfg_.enter_thresh && ev_peak_dev_ >= cfg_.absolute_min_dev);
 
         if (exit_condition)
         {

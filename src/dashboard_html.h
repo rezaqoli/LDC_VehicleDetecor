@@ -85,6 +85,8 @@ th { background: #eef3f8; }
 <div class="card">
   <h2>🧠 Detector Controls</h2>
   <div class="row">
+    <label>Entry mode:</label><select id="entry_mode"><option value="baseline">Baseline threshold</option><option value="derivative">Signal derivative</option></select>
+    <button onclick="sendEntryMode()">Apply Entry Mode</button>
     <label>Confirm samples:</label><input type="number" id="det_confirm" value="3" step="1">
     <label>Min samples:</label><input type="number" id="det_min_samples" value="6" step="1">
     <label>Peak ratio:</label><input type="number" id="det_peak_ratio" value="1.8" step="0.1">
@@ -441,6 +443,9 @@ function sendThreshold() {
 function sendAutoThreshold() {
   sendCmd('SET_AUTO_THRESH|' + el('auto_enable').value + '|' + el('auto_enter_sigma').value + '|' + el('auto_abs_sigma').value);
 }
+function sendEntryMode() {
+  sendCmd('SET_ENTRY_MODE|' + el('entry_mode').value);
+}
 function sendSpeedKMH() {
   sendCmd('SET_DEFAULT_KMH|' + el('default_kmh').value);
 }
@@ -723,6 +728,7 @@ function parseConfigAck(data) {
   // if idx not given, assume it's for pair 0 (legacy)
   if (values.idx === undefined || values.idx === '0') {
     if (values.dual !== undefined) el('cfg_dual').value = values.dual;
+    if (values.entry_mode !== undefined) el('entry_mode').value = values.entry_mode;
     if (values.dist !== undefined) el('cfg_dist').value = values.dist;
     if (values.s1 !== undefined) el('cfg_s1').value = values.s1;
     if (values.c1 !== undefined) el('cfg_ch1').value = values.c1;
@@ -745,6 +751,7 @@ function parseConfig(data) {
       if (kv.length === 2) values[kv[0]] = kv[1];
     }
     if (values.dual !== undefined) el('cfg_dual').value = values.dual;
+    if (values.entry_mode !== undefined) el('entry_mode').value = values.entry_mode;
     if (values.dist !== undefined) el('cfg_dist').value = values.dist;
     if (values.s1 !== undefined) el('cfg_s1').value = values.s1;
     if (values.c1 !== undefined) el('cfg_ch1').value = values.c1;

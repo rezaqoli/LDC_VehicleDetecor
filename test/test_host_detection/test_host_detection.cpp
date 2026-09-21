@@ -85,6 +85,59 @@ void test_classification_known_shape_assigns_class()
   TEST_ASSERT(strlen(ev.vehicle_class) > 0);
 }
 
+void test_derivative_mode_detects_sharp_rise()
+{
+  DetectorConfig cfg;
+  cfg.entry_mode = EntryDetectionMode::DERIVATIVE;
+  cfg.warmup_samples = 5;
+  cfg.calib_samples = 40;
+  cfg.smoothing_alpha = 1.0f;
+  cfg.confirm_samples = 2;
+  cfg.min_event_samples = 4;
+  cfg.min_event_ms = 10;
+  VehicleDetector d("S1C0", cfg);
+  EventResult ev;
+  uint32_t sample = 0;
+
+  for (; sample < 50; sample++)
+    d.feed(100000, sample * 5000, ev);
+  bool fired = false;
+  for (int i = 0; i < 12; i++, sample++)
+    fired = d.feed(110000, sample * 5000, ev) || fired;
+
+  for (int i = 0; i < 12; i++, sample++)
+    fired = d.feed(100000, sample * 5000, ev) || fired;
+  TEST_ASSERT_TRUE(fired);
+}
+
+void test_derivative_mode_detects_slow_sustained_rise()
+{
+  DetectorConfig cfg;
+  cfg.entry_mode = EntryDetectionMode::DERIVATIVE;
+  cfg.warmup_samples = 5;
+  cfg.calib_samples = 40;
+  cfg.smoothing_alpha = 1.0f;
+  cfg.confirm_samples = 2;
+  cfg.min_event_samples = 4;
+  cfg.min_event_ms = 10;
+  cfg.min_slow_enter_ms = 50;
+  cfg.derivative_sigma = 20.0f; // ensure this path is not a sharp-edge trigger
+  cfg.derivative_slow_sigma = 3.0f;
+  VehicleDetector d("S1C0", cfg);
+  EventResult ev;
+  uint32_t sample = 0;
+
+  for (; sample < 50; sample++)
+    d.feed(100000, sample * 5000, ev);
+  for (int i = 0; i < 40; i++, sample++)
+    d.feed(100000 + (i + 1) * 10, sample * 5000, ev);
+
+  bool fired = false;
+  for (int i = 0; i < 12; i++, sample++)
+    fired = d.feed(100000, sample * 5000, ev) || fired;
+  TEST_ASSERT_TRUE(fired);
+}
+
 int runUnityTests(void)
 {
   UNITY_BEGIN();
@@ -92,6 +145,8 @@ int runUnityTests(void)
   RUN_TEST(test_no_event_during_calibration);
   RUN_TEST(test_event_triggered_on_big_spike_after_calibration);
   RUN_TEST(test_classification_known_shape_assigns_class);
+  RUN_TEST(test_derivative_mode_detects_sharp_rise);
+  RUN_TEST(test_derivative_mode_detects_slow_sustained_rise);
   return UNITY_END();
 }
 

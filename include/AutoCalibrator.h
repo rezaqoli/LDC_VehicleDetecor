@@ -65,6 +65,7 @@ public:
 
     void begin(uint32_t now_ms);
     void reset();
+    void setCalibrationResult(float baseline, float noise_std, float noise_rms, uint32_t now_ms);
 
     // Sample interface
     void onSample(float raw, uint32_t now_ms, bool event_active);

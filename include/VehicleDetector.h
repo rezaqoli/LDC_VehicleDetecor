@@ -18,6 +18,12 @@ void wsSend(const char *msg);
 // ============================================================
 // Detector Configuration
 // ============================================================
+enum class EntryDetectionMode : uint8_t
+{
+    BASELINE = 0,
+    DERIVATIVE = 1
+};
+
 struct DetectorConfig
 {
     float enter_thresh = 0.0008f;
@@ -87,6 +93,13 @@ struct DetectorConfig
     float max_enter_thresh = 1.0f;
     float max_abs_dev = 1.0f;
     float default_speed_kmh = 90.0f;
+
+    // Entry detector selection. Derivative thresholds are expressed as
+    // multiples of calibrated sample-to-sample noise, not raw ADC counts.
+    EntryDetectionMode entry_mode = EntryDetectionMode::BASELINE;
+    float derivative_sigma = 5.0f;
+    float derivative_slow_sigma = 6.0f;
+    uint32_t derivative_slow_window_ms = 600;
 };
 
 // ============================================================
@@ -200,6 +213,13 @@ private:
     float baseline_ = 0;
     float filtered_val_ = 0.0f;
     float prev_filtered_ = 0.0f;
+    uint32_t prev_filtered_us_ = 0;
+    bool derivative_initialized_ = false;
+    float derivative_origin_dev_ = 0.0f;
+    uint32_t derivative_origin_us_ = 0;
+    uint32_t derivative_rise_samples_ = 0;
+    bool derivative_candidate_ = false;
+    float derivative_candidate_floor_ = 0.0f;
     uint32_t sustained_dev_cnt_ = 0;
     uint32_t warmup_cnt_ = 0;
     uint32_t above_thresh_count_ = 0;
@@ -217,6 +237,7 @@ private:
     void update_baseline(float val);
     void extract_features(uint32_t end_us, EventResult &ev);
     void reset_state(DetectorState s);
+    void reset_entry_tracking();
 };
 
 // ============================================================

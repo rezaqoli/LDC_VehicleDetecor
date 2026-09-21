@@ -63,6 +63,20 @@ void AutoCalibrator::reset()
     calib_prev_val_ = 0;
 }
 
+void AutoCalibrator::setCalibrationResult(float baseline, float noise_std, float noise_rms, uint32_t now_ms)
+{
+    reset();
+    baseline_ = baseline;
+    baseline_fast_ = baseline;
+    baseline_slow_ = baseline;
+    noise_std_ = noise_std;
+    noise_rms_ = noise_rms;
+    prev_sample_ = baseline;
+    confidence_ = 0.9f;
+    last_calib_ms_ = now_ms;
+    state_ = CalibState::IDLE;
+}
+
 // ============================================================
 // Sample Processing
 // ============================================================

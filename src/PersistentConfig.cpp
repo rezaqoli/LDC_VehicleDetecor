@@ -314,71 +314,13 @@ bool PersistentConfig::loadDetectorConfig(uint8_t sensor, uint8_t ch, DetectorCo
     char key[16];
     snprintf(key, sizeof(key), "det_%u_%u", sensor, ch);
 
-    size_t required_size = sizeof(cfg);
-    esp_err_t err = nvs_get_blob(handle, key, &cfg, &required_size);
+    size_t stored_size = 0;
+    esp_err_t err = nvs_get_blob(handle, key, nullptr, &stored_size);
 
     if (err == ESP_ERR_NVS_NOT_FOUND)
     {
         // Use default and save
-        memset(&cfg, 0, sizeof(cfg));
-        cfg.enter_thresh = 0.0008f;
-        cfg.exit_diff_th = 50.0f;
-        cfg.exit_ratio = 0.25f;
-        cfg.exit_hysteresis_cnt = 5;
-        cfg.absolute_min_dev = 0.0003f;
-        cfg.min_event_ms = 20;
-        cfg.max_event_ms = 5000;
-        cfg.motor_max_len = 2.4f;
-        cfg.car_max_len = 4.0f;
-        cfg.pickup_max_len = 5.0f;
-        cfg.van_max_len = 6.5f;
-        cfg.bus_max_len = 11.0f;
-        cfg.truck_s_max_len = 8.0f;
-        cfg.truck_2_max_len = 10.5f;
-        cfg.truck_3_max_len = 14.0f;
-        cfg.truck_4_plus_min_len = 14.0f;
-        cfg.classify_peak_to_thresh_low = 2.5f;
-        cfg.classify_peak_to_thresh_high = 8.0f;
-        cfg.classify_rise_short_ms = 45.0f;
-        cfg.classify_rise_mid_ms = 160.0f;
-        cfg.classify_rise_long_ms = 300.0f;
-        cfg.classify_energy_low = 0.00001f;
-        cfg.classify_energy_mid = 0.00008f;
-        cfg.classify_energy_high = 0.00020f;
-        cfg.classify_crest_spiky = 2.8f;
-        cfg.classify_crest_broad = 1.6f;
-        cfg.classify_skew_tol = 0.35f;
-        cfg.classify_skew_high = 0.75f;
-        cfg.classify_com_center_min = 0.38f;
-        cfg.classify_com_center_max = 0.62f;
-        cfg.classify_com_edge_min = 0.32f;
-        cfg.classify_com_edge_max = 0.68f;
-        cfg.classify_width_medium = 0.20f;
-        cfg.classify_width_wide = 0.45f;
-        cfg.classify_std_peak_high = 0.35f;
-        cfg.classify_std_peak_low = 0.18f;
-        cfg.peak_prominence_ratio = 0.35f;
-        cfg.min_axle_distance_ms = 80.0f;
-        cfg.min_entry_slope = 0.0005f;
-        cfg.min_slow_enter_ms = 80;
-        cfg.peak_prominence_abs = 0.0002f;
-        cfg.calib_samples = 640;
-        cfg.warmup_samples = 50;
-        cfg.baseline_alpha = 0.0004f;
-        cfg.confirm_samples = 3;
-        cfg.min_event_samples = 6;
-        cfg.smoothing_alpha = 0.35f;
-        cfg.peak_to_baseline_ratio = 1.8f;
-        cfg.enter_hysteresis_ratio = 0.70f;
-        cfg.exit_hysteresis_ratio = 0.55f;
-        cfg.auto_threshold = true;
-        cfg.enter_sigma = 5.0f;
-        cfg.abs_sigma = 2.5f;
-        cfg.min_enter_thresh = 0.0008f;
-        cfg.min_abs_dev = 0.0003f;
-        cfg.max_enter_thresh = 1.0f;
-        cfg.max_abs_dev = 1.0f;
-        cfg.default_speed_kmh = 90.0f;
+        cfg = DetectorConfig{};
 
         saveDetectorConfig(sensor, ch, cfg);
         return true;
@@ -389,6 +331,31 @@ bool PersistentConfig::loadDetectorConfig(uint8_t sensor, uint8_t ch, DetectorCo
         Serial.printf("[NVS] loadDetectorConfig(%u,%u) failed: %s\n", sensor, ch, esp_err_to_name(err));
         return false;
     }
+
+    if (stored_size > sizeof(DetectorConfig))
+    {
+        Serial.printf("[NVS] Detector config %u/%u is newer than this firmware\n", sensor, ch);
+        return false;
+    }
+
+    // Start with current defaults, then overlay all fields available in an
+    // older blob. This preserves compatibility when fields are appended.
+    DetectorConfig loaded;
+    size_t read_size = sizeof(loaded);
+    err = nvs_get_blob(handle, key, &loaded, &read_size);
+    if (err != ESP_OK)
+    {
+        Serial.printf("[NVS] loadDetectorConfig(%u,%u) failed: %s\n", sensor, ch, esp_err_to_name(err));
+        return false;
+    }
+    cfg = loaded;
+
+    if (cfg.entry_mode != EntryDetectionMode::BASELINE &&
+        cfg.entry_mode != EntryDetectionMode::DERIVATIVE)
+        cfg.entry_mode = EntryDetectionMode::BASELINE;
+
+    if (stored_size != sizeof(DetectorConfig))
+        saveDetectorConfig(sensor, ch, cfg);
 
     return true;
 }
@@ -410,6 +377,7 @@ bool PersistentConfig::loadDetectorConfigs()
         {
             DetectorConfig cfg = det[s][ch].getConfig();
             success &= loadDetectorConfig(s, ch, cfg);
+            det[s][ch].setConfig(cfg);
         }
     return success;
 }

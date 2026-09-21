@@ -403,6 +403,41 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
       PersistentConfig::saveDetectorConfigs();
     }
   }
+  else if (cmd.startsWith("SET_ENTRY_MODE|"))
+  {
+    String mode = cmd.substring(15);
+    mode.trim();
+    EntryDetectionMode entryMode;
+    const char *modeName = nullptr;
+    if (mode == "baseline" || mode == "BASELINE" || mode == "0")
+    {
+      entryMode = EntryDetectionMode::BASELINE;
+      modeName = "baseline";
+    }
+    else if (mode == "derivative" || mode == "DERIVATIVE" || mode == "1")
+    {
+      entryMode = EntryDetectionMode::DERIVATIVE;
+      modeName = "derivative";
+    }
+    else
+    {
+      reply.send(num, "ERROR|Invalid_entry_mode");
+      return;
+    }
+
+    for (int s = 0; s < 2; s++)
+      for (int ch = 0; ch < 4; ch++)
+      {
+        DetectorConfig cfg = det[s][ch].getConfig();
+        cfg.entry_mode = entryMode;
+        det[s][ch].setConfig(cfg);
+      }
+
+    char response[48];
+    snprintf(response, sizeof(response), "ENTRY_MODE_ACK|mode:%s", modeName);
+    reply.send(num, response);
+    PersistentConfig::saveDetectorConfigs();
+  }
   else if (cmd.startsWith("GET_SPEED_CONFIG"))
   {
     sendAllSpeedPairConfigs(reply, num);
@@ -414,9 +449,9 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
   else if (cmd.startsWith("GET_CONFIG"))
   {
     DetectorConfig cfg = det[0][0].getConfig();
-    char msg[640];
+    char msg[1024];
     snprintf(msg, sizeof(msg),
-             "CONFIG|enter:%.6f|abs:%.6f|exit_ratio:%.2f|hyst:%u|min_ms:%u|max_ms:%u|motor:%.1f|car:%.1f|pickup:%.1f|van:%.1f|bus:%.1f|truckS:%.1f|truck2:%.1f|truck3:%.1f|truck4min:%.1f|prom:%.2f|axle_ms:%.1f|confirm:%u|min_samples:%u|peak_ratio:%.2f|enter_hyst:%.2f|exit_hyst:%.2f|auto:%d|enter_sigma:%.2f|abs_sigma:%.2f|dual:%d|dist:%.1f|s1:%u|c1:%u|s2:%u|c2:%u|default_kmh:%.1f|rise_short:%.1f|rise_mid:%.1f|rise_long:%.1f|energy_low:%.6f|energy_mid:%.6f|energy_high:%.6f|crest_spiky:%.2f|crest_broad:%.2f|skew_tol:%.2f|skew_high:%.2f|com_min:%.2f|com_max:%.2f|width_mid:%.2f|width_wide:%.2f|std_high:%.2f|std_low:%.2f",
+             "CONFIG|enter:%.6f|abs:%.6f|exit_ratio:%.2f|hyst:%u|min_ms:%u|max_ms:%u|motor:%.1f|car:%.1f|pickup:%.1f|van:%.1f|bus:%.1f|truckS:%.1f|truck2:%.1f|truck3:%.1f|truck4min:%.1f|prom:%.2f|axle_ms:%.1f|confirm:%u|min_samples:%u|peak_ratio:%.2f|enter_hyst:%.2f|exit_hyst:%.2f|auto:%d|enter_sigma:%.2f|abs_sigma:%.2f|entry_mode:%s|deriv_sigma:%.2f|deriv_slow_sigma:%.2f|deriv_window_ms:%u|dual:%d|dist:%.1f|s1:%u|c1:%u|s2:%u|c2:%u|default_kmh:%.1f|rise_short:%.1f|rise_mid:%.1f|rise_long:%.1f|energy_low:%.6f|energy_mid:%.6f|energy_high:%.6f|crest_spiky:%.2f|crest_broad:%.2f|skew_tol:%.2f|skew_high:%.2f|com_min:%.2f|com_max:%.2f|width_mid:%.2f|width_wide:%.2f|std_high:%.2f|std_low:%.2f",
              cfg.enter_thresh, cfg.absolute_min_dev, cfg.exit_ratio, cfg.exit_hysteresis_cnt,
              cfg.min_event_ms, cfg.max_event_ms,
              cfg.motor_max_len, cfg.car_max_len, cfg.pickup_max_len, cfg.van_max_len, cfg.bus_max_len,
@@ -426,6 +461,8 @@ void processSystemCommand(const String &cmd, IReplyChannel &reply, uint8_t num)
              cfg.peak_to_baseline_ratio, cfg.enter_hysteresis_ratio, cfg.exit_hysteresis_ratio,
              cfg.auto_threshold ? 1 : 0,
              cfg.enter_sigma, cfg.abs_sigma,
+             cfg.entry_mode == EntryDetectionMode::DERIVATIVE ? "derivative" : "baseline",
+             cfg.derivative_sigma, cfg.derivative_slow_sigma, cfg.derivative_slow_window_ms,
              loopCfg[0].dualLoop ? 1 : 0, loopCfg[0].distance,
              loopCfg[0].sensor1, loopCfg[0].ch1, loopCfg[0].sensor2, loopCfg[0].ch2,
              cfg.default_speed_kmh,
