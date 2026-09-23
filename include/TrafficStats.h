@@ -27,18 +27,18 @@ enum VehicleClassIndex
 // ============================================================
 struct TrafficRulesConfig
 {
-    bool enable_speed_violation = true;
+    bool enable_speed_violation = false;
     float speed_limit_kmh = 100.0f;
     float speed_tolerance_kmh = 5.0f;
 
-    bool enable_distance_violation = true;
+    bool enable_distance_violation = false;
     float min_follow_distance_m = 30.0f;
     float min_headway_s = 1.2f;
     uint32_t max_headway_ms = 20000;
 
     float assume_speed_kmh = 0.0f;
 
-    bool enable_lane_violation = true;
+    bool enable_lane_violation = false;
     uint32_t min_straddle_overlap_ms = 100;
     float min_straddle_overlap_ratio = 0.25f;
     uint32_t lane_violation_cooldown_ms = 2000;

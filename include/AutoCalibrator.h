@@ -96,6 +96,7 @@ private:
     float drift_score_, confidence_, shadow_center_, shadow_noise_;
     uint32_t stable_ms_, last_now_ms_, last_event_end_ms_, last_calib_ms_;
     uint32_t degraded_since_ms_, fault_since_ms_, invalid_since_ms_;
+    bool event_active_;
     CalibState state_;
     SensorHealth health_;
     CalibrationUpdate last_update_;

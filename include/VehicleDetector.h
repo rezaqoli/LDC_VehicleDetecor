@@ -33,7 +33,7 @@ struct DetectorConfig
     float absolute_min_dev = 0.0003f;
 
     uint32_t min_event_ms = 20;
-    uint32_t max_event_ms = 5000;
+    uint32_t max_event_ms = 8000;
 
     // ========== Length-based classification bounds (meters) ==========
     float motor_max_len = 2.4f;
