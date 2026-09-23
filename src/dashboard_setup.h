@@ -1,7 +1,7 @@
 #ifndef DASHBOARD_SETUP_H
 #define DASHBOARD_SETUP_H
 
-const char *DASHBOARD_SETUP_HTML = R"RAW(
+static const char DASHBOARD_SETUP_HTML[] PROGMEM = R"RAW(
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>LDC Device Setup</title><style>
 :root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f2f5f9;color:#16202b;font:14px system-ui,Arial,sans-serif}

@@ -1,7 +1,7 @@
 #ifndef DASHBOARD_MQTT_H
 #define DASHBOARD_MQTT_H
 
-const char* DASHBOARD_MQTT_HTML = R"RAW(
+static const char DASHBOARD_MQTT_HTML[] PROGMEM = R"RAW(
 <!DOCTYPE html>
 <html>
 <head>

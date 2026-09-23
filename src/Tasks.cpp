@@ -135,7 +135,8 @@ void taskDetector(void *)
 
   while (true)
   {
-    if (xQueueReceive(rawQueue, &frame, pdMS_TO_TICKS(10)) == pdTRUE)
+    const BaseType_t gotFrame = xQueueReceive(rawQueue, &frame, pdMS_TO_TICKS(10));
+    if (gotFrame == pdTRUE)
     {
       if (g_detectionPaused)
       {
@@ -235,7 +236,11 @@ void taskDetector(void *)
     }
     
 
-    vTaskDelay(pdMS_TO_TICKS(10));
+    // SensorReading produces one frame every 5 ms.  An additional 10 ms
+    // delay here limited the detector to about 100 Hz and guaranteed that a
+    // 200 Hz producer would eventually fill rawQueue.  Yield without adding
+    // latency; xQueueReceive above already blocks when the detector is idle.
+    taskYIELD();
   }
 }
 

@@ -227,13 +227,13 @@ void setup()
   Serial.printf("[WiFi] mDNS hostname: %s.local\n", DEVICE_HOSTNAME);
 
   httpServer.on("/dev", []
-                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
+                { if (requireDashboardAuthentication()) httpServer.send_P(200, "text/html; charset=utf-8", DASHBOARD_HTML); });
   httpServer.on("/tech", []
-                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_TECH_HTML); });
+                { if (requireDashboardAuthentication()) httpServer.send_P(200, "text/html; charset=utf-8", DASHBOARD_TECH_HTML); });
   httpServer.on("/setup", []
-                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_SETUP_HTML); });
+                { if (requireDashboardAuthentication()) httpServer.send_P(200, "text/html; charset=utf-8", DASHBOARD_SETUP_HTML); });
   httpServer.on("/mqtt", []
-                { if (requireDashboardAuthentication()) httpServer.send(200, "text/html; charset=utf-8", DASHBOARD_MQTT_HTML); });
+                { if (requireDashboardAuthentication()) httpServer.send_P(200, "text/html; charset=utf-8", DASHBOARD_MQTT_HTML); });
   httpServer.on("/", []()
                 {
                   const char *idx =
@@ -320,8 +320,8 @@ void setup()
       xTaskCreatePinnedToCore(taskWsLoop,                   "WS", 12288, NULL, 3, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSpeedMatch,           "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 0) != pdPASS ||
-      xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 5, NULL, 0) != pdPASS ||
-      xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 4, NULL, 0) != pdPASS ||     
+      xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 5, NULL, 1) != pdPASS ||
+      xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 4, NULL, 1) != pdPASS ||     
       xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 4, NULL, 1) != pdPASS
       )
   {

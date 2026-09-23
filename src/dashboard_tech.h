@@ -1,7 +1,7 @@
 #ifndef DASHBOARD_TECH_H
 #define DASHBOARD_TECH_H
 
-const char* DASHBOARD_TECH_HTML = R"RAW(
+static const char DASHBOARD_TECH_HTML[] PROGMEM = R"RAW(
 <!DOCTYPE html>
 <html>
 <head>
