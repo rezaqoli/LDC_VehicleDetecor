@@ -8,7 +8,9 @@
 // ============================================================
 // Feature flag
 // ============================================================
-bool send_full_event_features = true;
+// Keep the wire event compact by default.  Full feature records remain
+// available for bench diagnostics by setting this at runtime/build time.
+bool send_full_event_features = false;
 
 // ============================================================
 // Constructor
@@ -1223,12 +1225,13 @@ void reportEvent(const EventResult &ev, void (*wsCallback)(const char *))
         return;
     }
 
-    char msg[256];
+    // Compact vital-only event record:
+    // EVENT|channel|class|duration_ms|peak_dev|length_m|axle_count
+    char msg[96];
     snprintf(msg, sizeof(msg),
-             "EVENT|%s|dur:%.1f|peak:%.3f|w50:%d|rise:%.1f|class:%s|score:%d|crest:%.6f|len:%.1f|peaks:%d|pkdist:%.1f",
-             ev.channel_id, ev.duration_ms, ev.peak_dev, ev.width_half_max,
-             ev.rise_ms, ev.vehicle_class, ev.anomaly_score, ev.crest_factor,
-             ev.estimated_length_m, ev.num_peaks, ev.peak_distance_ms);
+             "EVENT|%s|%s|%lu|%.4f|%.1f|%d",
+             ev.channel_id, ev.vehicle_class, (unsigned long)ev.duration_ms,
+             ev.peak_dev, ev.estimated_length_m, ev.num_peaks);
     if (wsCallback)
         wsCallback(msg);
     Serial.printf("[%s] %.1fms peak=%.3f w50=%d class=%s len=%.1fm peaks=%d\n",

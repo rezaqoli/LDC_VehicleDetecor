@@ -94,8 +94,14 @@ void taskSensorReading(void *)
     readSensorChannels<SoftWire>(I2C_Bus1, i2c1Mutex, ldc2, frame, 1);
     #endif
 
-    if (rawQueue)
-      xQueueSend(rawQueue, &frame, 0);
+    if (rawQueue && xQueueSend(rawQueue, &frame, 0) != pdTRUE)
+    {
+      // The detector must never silently lose samples; this is throttled to
+      // avoid turning an overload into additional serial blocking.
+      static uint32_t dropped = 0;
+      if ((++dropped % 200) == 1)
+        Serial.printf("[Sensor] raw queue full, dropped=%lu\n", (unsigned long)dropped);
+    }
   }
 }
 
@@ -149,6 +155,10 @@ void taskDetector(void *)
           if (det[s][ch].feed(val, frame.ts_us, ev))
           {
             trafficMonitorOnRawEvent(ev);
+            // Raw events are the authoritative detection result.  Publish
+            // them immediately; dual-loop matching may later add a SPEED
+            // record, but must not hold or duplicate the raw event.
+            reportEvent(ev, wsSend);
 
             if (det[s][ch].isDualLoopMode())
             {
@@ -170,7 +180,6 @@ void taskDetector(void *)
             }
             else
             {
-              reportEvent(ev, wsSend);
               trafficMonitorOnSingleEvent(ev);
               ledOffTime[s*4 + ch] = esp_timer_get_time() / 1000 + 500; // Convert to milliseconds + 500ms blink
               digitalWrite(LedSensors[s*4 + ch], HIGH);
@@ -238,49 +247,58 @@ void taskSpeedMatch(void *)
   while (true)
   {
     EventResult *ev = nullptr;
-    if (xQueueReceive(eventQueue, &ev, pdMS_TO_TICKS(20)) == pdTRUE)
+    BaseType_t got = xQueueReceive(eventQueue, &ev, pdMS_TO_TICKS(20));
+    while (got == pdTRUE)
     {
       if (g_detectionPaused)
       {
         // Paused: don't process events; release the slot and skip.
         releaseEventSlot(ev);
-        continue;
       }
-      uint8_t matchCount = 0;
-      for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
+      else
       {
-        LoopConfig &cfgPair = loopCfg[i];
-        SpeedPairState &st = speedState[i];
-        if (!cfgPair.dualLoop)
-          continue;
-
-        char id1[8], id2[8];
-        formatLoopChannelId(cfgPair.sensor1, cfgPair.ch1, id1, sizeof(id1));
-        formatLoopChannelId(cfgPair.sensor2, cfgPair.ch2, id2, sizeof(id2));
-
-        if (ev && strcmp(ev->channel_id, id1) == 0)
+        uint8_t matchCount = 0;
+        for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
         {
-          if (st.e1)
-            releaseEventSlot(st.e1);
-          if (matchCount > 0)
-            retainEventSlot(ev);
-          st.e1 = ev;
-          st.h1 = true;
-          matchCount++;
+          LoopConfig &cfgPair = loopCfg[i];
+          SpeedPairState &st = speedState[i];
+          if (!cfgPair.dualLoop)
+            continue;
+
+          char id1[8], id2[8];
+          formatLoopChannelId(cfgPair.sensor1, cfgPair.ch1, id1, sizeof(id1));
+          formatLoopChannelId(cfgPair.sensor2, cfgPair.ch2, id2, sizeof(id2));
+
+          if (ev && strcmp(ev->channel_id, id1) == 0)
+          {
+            if (st.e1)
+              releaseEventSlot(st.e1);
+            if (matchCount > 0)
+              retainEventSlot(ev);
+            st.e1 = ev;
+            st.h1 = true;
+            matchCount++;
+          }
+          if (ev && strcmp(ev->channel_id, id2) == 0)
+          {
+            if (st.e2)
+              releaseEventSlot(st.e2);
+            if (matchCount > 0)
+              retainEventSlot(ev);
+            st.e2 = ev;
+            st.h2 = true;
+            matchCount++;
+          }
         }
-        if (ev && strcmp(ev->channel_id, id2) == 0)
-        {
-          if (st.e2)
-            releaseEventSlot(st.e2);
-          if (matchCount > 0)
-            retainEventSlot(ev);
-          st.e2 = ev;
-          st.h2 = true;
-          matchCount++;
-        }
+        if (matchCount == 0)
+          releaseEventSlot(ev);
       }
-      if (matchCount == 0)
-        releaseEventSlot(ev);
+
+      // Drain all events already queued before doing pair housekeeping. This
+      // removes the old one-event-per-millisecond backlog and its visible
+      // reporting delay.
+      ev = nullptr;
+      got = xQueueReceive(eventQueue, &ev, 0);
     }
 
     const uint64_t now_us = (uint64_t)esp_timer_get_time();
@@ -325,8 +343,16 @@ void taskSpeedMatch(void *)
         continue;
       }
 
-      uint32_t event_delta_us = (st.e1->end_us > st.e2->end_us) ? (st.e1->end_us - st.e2->end_us) : (st.e2->end_us - st.e1->end_us);
-      if (event_delta_us > SPEED_PAIR_TIMEOUT_US)
+      // Preserve the order in which the two physical loops fired.  A
+      // positive value means sensor1/ch1 -> sensor2/ch2; negative means the
+      // reverse direction.  The stored event timestamps are uint32_t, so
+      // subtract in unsigned arithmetic first and reinterpret the wrapped
+      // result as signed; this remains correct for intervals below 2^31 us.
+      const int32_t signed_delta_us =
+          (int32_t)(uint32_t)(st.e2->end_us - st.e1->end_us);
+      const uint32_t abs_delta_us = (signed_delta_us >= 0) ?
+          (uint32_t)signed_delta_us : (uint32_t)(-signed_delta_us);
+      if (abs_delta_us > SPEED_PAIR_TIMEOUT_US)
       {
         releaseEventSlot(st.e1);
         releaseEventSlot(st.e2);
@@ -336,14 +362,16 @@ void taskSpeedMatch(void *)
         continue;
       }
 
-      float delay_ms = event_delta_us / 1000.0f;
+      float delay_ms = (float)signed_delta_us / 1000.0f;
       float abs_delay_ms = fabsf(delay_ms);
 
       if (abs_delay_ms > 0.05f && abs_delay_ms < 1000.0f)
       {
         float speed_ms = cfgPair.distance / (abs_delay_ms / 1000.0f);
+        if (delay_ms < 0.0f)
+          speed_ms = -speed_ms;
 
-        float length = speed_ms * ((st.e1->duration_ms + st.e2->duration_ms) * 0.5f / 1000.0f);
+        float length = fabsf(speed_ms) * ((st.e1->duration_ms + st.e2->duration_ms) * 0.5f / 1000.0f);
         st.e1->estimated_length_m = length;
         st.e2->estimated_length_m = length;
         det[cfgPair.sensor1][cfgPair.ch1].reclassify(*st.e1);
@@ -360,13 +388,12 @@ void taskSpeedMatch(void *)
 
         trafficMonitorOnDualMatch(i, st.e1, st.e2, st.last_speed_kmh);
 
-        reportEvent(*st.e1, wsSend);
-        reportEvent(*st.e2, wsSend);
-
         char msg[192];
+        const char direction = (delay_ms < 0.0f) ? '<' : '>';
         snprintf(msg, sizeof(msg),
-                 "SPEED|idx:%u|speed:%.1f|len:%.2f|type:%s|delay:%.2f|dist:%.2f|a:%s|b:%s",
-                 i, st.last_speed_kmh, st.last_length_m, st.last_type, st.last_delay_ms, cfgPair.distance, id1, id2);
+                 "SPEED|%u|%.1f|%.2f|%s|%.0f|%c",
+                 i, st.last_speed_kmh, st.last_length_m, st.last_type,
+                 st.last_delay_ms, direction);
         wsSend(msg);
         #ifdef ENABLE_MQTT
           mqttPublishEvent(msg);
@@ -428,13 +455,15 @@ void taskWsLoop(void *)
     wsLoop();
 
     WsTxMessage *msg = nullptr;
-    for (uint8_t i = 0; i < 4 && xQueueReceive(wsTxQueue, &msg, 0) == pdTRUE; i++)
+    uint8_t drained = 0;
+    while (drained < 32 && xQueueReceive(wsTxQueue, &msg, 0) == pdTRUE)
     {
       if (msg)
       {
         wsBroadcast(msg->text);
         xQueueSend(freeWsMsgQueue, &msg, 0);
       }
+      drained++;
     }
 
     TickType_t now = xTaskGetTickCount();
@@ -456,7 +485,10 @@ void taskWsLoop(void *)
       }
     }
 
-    vTaskDelay(pdMS_TO_TICKS(5));
+    if (drained == 0)
+      vTaskDelay(pdMS_TO_TICKS(2));
+    else
+      taskYIELD();
   }
 }
 

@@ -255,7 +255,7 @@ void setup()
 
   mqttInit();
 
-  rawQueue       = xQueueCreate(16, sizeof(RawFrame));
+  rawQueue       = xQueueCreate(RAW_QUEUE_SIZE, sizeof(RawFrame));
   eventQueue     = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
   freeEventQueue = xQueueCreate(EVENT_POOL_SIZE, sizeof(EventResult *));
   wsTxQueue      = xQueueCreate(WS_TX_POOL_SIZE, sizeof(WsTxMessage *));
@@ -315,10 +315,10 @@ void setup()
   //     )
 
         if (
-      xTaskCreatePinnedToCore(taskSensorReading,        "Sensor", 8192, NULL, 2, NULL, 0) != pdPASS ||
-      xTaskCreatePinnedToCore(taskDetector,          "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskSensorReading,        "Sensor", 8192, NULL, 1, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskDetector,          "Detector", 12288, NULL, 2, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskWsLoop,                   "WS", 12288, NULL, 3, NULL, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(taskSpeedMatch,           "Speed", 12288, NULL, 1, NULL, 0) != pdPASS ||
+      xTaskCreatePinnedToCore(taskSpeedMatch,           "Speed", 12288, NULL, 2, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 5, NULL, 0) != pdPASS ||
       xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 4, NULL, 0) != pdPASS ||     
