@@ -696,12 +696,11 @@ function parseEvent(data) {
       if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
     }
   } else if (parts.length >= 7) {
-    // Compact EVENT|channel|class|duration_ms|peak|length_m|axles format.
-    values.class = parts[2];
-    values.dur = parts[3];
-    values.peak = parts[4];
-    values.len = parts[5];
-    values.peaks = parts[6];
+    values.start = parts[2];
+    values.end = parts[3];
+    values.dur = parts[4];
+    values.class = parts[5];
+    values.len = parts[6];
   } else {
     return;
   }
@@ -716,14 +715,9 @@ function parseEvent(data) {
 function parseSpeedMessage(data) {
   const parts = data.split('|');
   const values = {};
-  if (parts.length > 1 && parts[1].indexOf(':') < 0 && !data.startsWith('SPEED_STATE|')) {
-    values.idx = parts[1]; values.speed = parts[2]; values.len = parts[3];
-    values.type = parts[4]; values.delay = parts[5]; values.dir = parts[6];
-  } else {
-    for (let i = 1; i < parts.length; i++) {
-      const sep = parts[i].indexOf(':');
-      if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
-    }
+  for (let i = 1; i < parts.length; i++) {
+    const sep = parts[i].indexOf(':');
+    if (sep > 0) values[parts[i].substring(0, sep)] = parts[i].substring(sep + 1);
   }
 
   const idx = Number(values.idx);
@@ -735,10 +729,9 @@ function parseSpeedMessage(data) {
       speedCell.innerText = '-';
     } else {
       const speed = values.speed || '0';
-      const arrow = values.dir === '<' ? ' ←' : (values.dir === '>' ? ' →' : '');
       speedCell.innerText = data.startsWith('SPEED_STATE|')
         ? speed + ' km/h'
-        : speed + ' km/h' + arrow + ' - ' + (values.len || '0') + 'm';
+        : speed + ' km/h - ' + (values.len || '0') + 'm';
     }
   }
 
@@ -754,7 +747,7 @@ function parseSpeedMessage(data) {
   }
 
   if (!data.startsWith('SPEED_STATE|')) {
-    log('🏁 SPEED pair ' + idx + ': ' + (values.speed || '0') + ' km/h ' + (values.dir || '') + ', ' +
+    log('🏁 SPEED pair ' + idx + ': ' + (values.speed || '0') + ' km/h, ' +
       (values.type || '--') + ', len=' + (values.len || '0') + 'm');
   }
 }

@@ -42,7 +42,7 @@ class AppState:
 state = AppState()
 
 # --- WebSocket & data flow ---
-state.ESP_IP = "192.168.4.1"#"192.168.100.232"#"192.168.4.1"
+state.ESP_IP = "192.168.4.1" #"192.168.100.232"#"192.168.4.1"
 state.WS_URL = f"ws://{state.ESP_IP}:81"
 state.ws = None
 state.running = False

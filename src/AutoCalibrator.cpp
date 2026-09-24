@@ -5,7 +5,7 @@ AutoCalibrator::AutoCalibrator()
     : cfg_(), baseline_fast_(0), baseline_slow_(0), baseline_(0), noise_variance_(0),
       noise_std_(0), noise_rms_(0), prev_sample_(0), diff_sq_sum_(0), drift_score_(0),
       confidence_(0), shadow_center_(0), shadow_noise_(0), stable_ms_(0), last_now_ms_(0),
-      last_event_end_ms_(0), last_calib_ms_(0), degraded_since_ms_(0), fault_since_ms_(0), invalid_since_ms_(0), event_active_(false),
+      last_event_end_ms_(0), last_calib_ms_(0), degraded_since_ms_(0), fault_since_ms_(0), invalid_since_ms_(0),
       state_(CalibState::IDLE), health_(SensorHealth::HEALTHY), last_update_(CalibrationUpdate::NONE),
       calib_sample_count_(0), calib_mean_(0), calib_m2_(0), calib_diff_sq_sum_(0),
       calib_prev_val_(0), block_start_ms_(0), block_count_(0), block_mean_(0), block_m2_(0),
@@ -35,7 +35,6 @@ void AutoCalibrator::reset()
     drift_score_ = confidence_ = shadow_center_ = shadow_noise_ = 0.0f;
     stable_ms_ = last_now_ms_ = last_event_end_ms_ = last_calib_ms_ = 0;
     degraded_since_ms_ = fault_since_ms_ = invalid_since_ms_ = 0;
-    event_active_ = false;
     state_ = CalibState::IDLE;
     health_ = SensorHealth::HEALTHY;
     last_update_ = CalibrationUpdate::NONE;
@@ -208,9 +207,9 @@ CalibrationUpdate AutoCalibrator::finishShadowBlock(uint32_t now_ms)
     }
     shadow_center_ = center;
     shadow_noise_ = candidate_std;
-    stable_ms_ = event_active_ ? 0 : cfg_.min_quiet_ms;
-    if (!event_active_ && !manual_pending) state_ = CalibState::QUIET_MONITOR;
-    if (event_active_ || manual_pending || baseline_ <= 0.0f || !cfg_.auto_reanchor_enabled)
+    stable_ms_ = cfg_.min_quiet_ms;
+    if (!manual_pending) state_ = CalibState::QUIET_MONITOR;
+    if (manual_pending || baseline_ <= 0.0f || !cfg_.auto_reanchor_enabled)
         return CalibrationUpdate::NONE;
     const float material = fmaxf(cfg_.min_reanchor_ratio * baseline_,
                                  cfg_.drift_warn_threshold * fmaxf(noise_std_, 1.0f));
@@ -346,19 +345,8 @@ void AutoCalibrator::onInvalidSample(uint32_t now_ms)
     if (elapsed(now_ms, invalid_since_ms_) >= cfg_.fault_holdoff_ms)
         health_ = SensorHealth::FAULT;
 }
-void AutoCalibrator::onEventStart(uint32_t now_ms)
-{
-    last_now_ms_ = now_ms;
-    event_active_ = true;
-    resetShadow(now_ms);
-}
-void AutoCalibrator::onEventEnd(uint32_t now_ms)
-{
-    last_now_ms_ = last_event_end_ms_ = now_ms;
-    event_active_ = false;
-    // Require a fresh post-event stable window; event plateaus cannot qualify.
-    resetShadow(now_ms);
-}
+void AutoCalibrator::onEventStart(uint32_t now_ms) { last_now_ms_ = now_ms; }
+void AutoCalibrator::onEventEnd(uint32_t now_ms) { last_now_ms_ = last_event_end_ms_ = now_ms; }
 bool AutoCalibrator::isQuiet() const { return stable_ms_ >= cfg_.min_quiet_ms; }
 bool AutoCalibrator::shouldRecalibrate() const
 {
