@@ -1,9 +1,11 @@
 #include "TrafficMonitor.h"
 #include "TrafficStats.h"
 #include "LoopGeometry.h"
+#include "Globals.h"
 #include "esp_timer.h"
 #include <cstring>
 #include <ctype.h>
+#include <stdio.h>
 
 // ============================================================
 // Helpers
@@ -93,6 +95,52 @@ struct FollowState
 
 static FollowState pairFollowState[SPEED_PAIR_COUNT];
 static FollowState channelFollowState[2][4];
+
+// Completed speed matches retained long enough to pair two adjacent lanes.
+// Values are copied because the detector event-pool slots are released by the
+// speed task immediately after processing a match.
+struct BetweenLinesMatch
+{
+    bool valid = false;
+    uint8_t pair_idx = 0;
+    uint8_t s1 = 0, ch1 = 0, s2 = 0, ch2 = 0;
+    uint32_t start_us = 0, end_us = 0;
+    float duration_ms = 0.0f;
+    float length_m = 0.0f;
+    float speed_kmh = 0.0f;
+    int cls = VCLASS_UNKNOWN;
+};
+
+static BetweenLinesMatch betweenLinesMatches[SPEED_PAIR_COUNT];
+
+static bool intervalsOverlap(const BetweenLinesMatch &a, const BetweenLinesMatch &b,
+                             uint32_t &overlap_ms, float &overlap_ratio)
+{
+    uint32_t start_max = a.start_us > b.start_us ? a.start_us : b.start_us;
+    uint32_t end_min = a.end_us < b.end_us ? a.end_us : b.end_us;
+    if (end_min <= start_max)
+        return false;
+
+    overlap_ms = (end_min - start_max) / 1000U;
+    float min_duration = a.duration_ms < b.duration_ms ? a.duration_ms : b.duration_ms;
+    overlap_ratio = min_duration > 10.0f ? (float)overlap_ms / min_duration : 0.0f;
+    return overlap_ms >= g_traffic_rules.min_straddle_overlap_ms &&
+           overlap_ratio >= g_traffic_rules.min_straddle_overlap_ratio;
+}
+
+static bool speedPairsAreAdjacent(const LoopConfig &a, const LoopConfig &b)
+{
+    // The two upstream loops and the two downstream loops must each be
+    // adjacent in the persisted geometry. This makes the grouping work for
+    // arbitrary sensor/channel layouts instead of hard-coding S1C0..S1C3.
+    int au = g_loopGeometry.findLoopIndex(a.sensor1, a.ch1);
+    int bu = g_loopGeometry.findLoopIndex(b.sensor1, b.ch1);
+    int ad = g_loopGeometry.findLoopIndex(a.sensor2, a.ch2);
+    int bd = g_loopGeometry.findLoopIndex(b.sensor2, b.ch2);
+    return au >= 0 && bu >= 0 && ad >= 0 && bd >= 0 &&
+           g_loopGeometry.areAdjacent((uint8_t)au, (uint8_t)bu) &&
+           g_loopGeometry.areAdjacent((uint8_t)ad, (uint8_t)bd);
+}
 
 // ============================================================
 // Lane straddle / between-lines detection
@@ -350,6 +398,88 @@ void trafficMonitorOnDualMatch(uint8_t pairIdx,
         st.speed_ms = speed_kmh / 3.6f;
         st.cls = cls;
     }
+}
+
+bool trafficMonitorBuildBetweenLinesEvent(uint8_t pairIdx,
+                                          const EventResult *e1,
+                                          const EventResult *e2,
+                                          float speed_kmh,
+                                          char *out,
+                                          size_t outSize)
+{
+    if (!e1 || !e2 || !out || outSize == 0 || pairIdx >= SPEED_PAIR_COUNT ||
+        !loopCfg[pairIdx].dualLoop)
+        return false;
+
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
+    for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
+    {
+        if (betweenLinesMatches[i].valid &&
+            now_us - (uint64_t)betweenLinesMatches[i].end_us > SPEED_PAIR_TIMEOUT_US)
+            betweenLinesMatches[i].valid = false;
+    }
+
+    BetweenLinesMatch current;
+    current.valid = true;
+    current.pair_idx = pairIdx;
+    current.s1 = loopCfg[pairIdx].sensor1;
+    current.ch1 = loopCfg[pairIdx].ch1;
+    current.s2 = loopCfg[pairIdx].sensor2;
+    current.ch2 = loopCfg[pairIdx].ch2;
+    current.start_us = e1->start_us < e2->start_us ? e1->start_us : e2->start_us;
+    current.end_us = e1->end_us > e2->end_us ? e1->end_us : e2->end_us;
+    current.duration_ms = e1->duration_ms > e2->duration_ms ? e1->duration_ms : e2->duration_ms;
+    current.length_m = (e1->estimated_length_m + e2->estimated_length_m) * 0.5f;
+    current.speed_kmh = speed_kmh;
+    current.cls = vehicleClassIndexFromString(e1->vehicle_class);
+
+    for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
+    {
+        BetweenLinesMatch &other = betweenLinesMatches[i];
+        if (!other.valid || i == pairIdx || !loopCfg[i].dualLoop ||
+            !speedPairsAreAdjacent(loopCfg[pairIdx], loopCfg[i]))
+            continue;
+
+        uint32_t overlap_ms = 0;
+        float overlap_ratio = 0.0f;
+        if (!intervalsOverlap(current, other, overlap_ms, overlap_ratio))
+            continue;
+
+        uint64_t cooldown_us = (uint64_t)g_traffic_rules.lane_violation_cooldown_ms * 1000ULL;
+        if (other.end_us > current.end_us &&
+            (uint64_t)other.end_us - current.end_us < cooldown_us)
+        {
+            // Reverse-order delivery is still one match; the first report
+            // already owns this pair combination during the cooldown.
+            other.valid = false;
+            return false;
+        }
+
+        char a1[8], a2[8], b1[8], b2[8];
+        snprintf(a1, sizeof(a1), "S%uC%u", current.s1 + 1, current.ch1);
+        snprintf(a2, sizeof(a2), "S%uC%u", current.s2 + 1, current.ch2);
+        snprintf(b1, sizeof(b1), "S%uC%u", other.s1 + 1, other.ch1);
+        snprintf(b2, sizeof(b2), "S%uC%u", other.s2 + 1, other.ch2);
+
+        float aggregate_speed = (current.speed_kmh + other.speed_kmh) * 0.5f;
+        float aggregate_length = (current.length_m + other.length_m) * 0.5f;
+        float aggregate_duration = (current.duration_ms + other.duration_ms) * 0.5f;
+        snprintf(out, outSize,
+                 "SPEED|between_lines:1|pair_a:%u|pair_b:%u|speed:%.1f|len:%.2f|dur:%.1f|overlap:%u|ratio:%.2f|a:%s,%s|b:%s,%s",
+                 pairIdx, other.pair_idx, aggregate_speed, aggregate_length,
+                 aggregate_duration, overlap_ms, overlap_ratio, a1, a2, b1, b2);
+
+        if (g_traffic_rules.enable_lane_violation)
+            trafficStatsRecordLaneViolation(current.cls);
+
+        other.valid = false;
+        return true;
+    }
+
+    // Replace an older match from the same pair. This also makes repeated
+    // detections from one pair unable to combine with stale data.
+    betweenLinesMatches[pairIdx] = current;
+    return false;
 }
 
 // ============================================================

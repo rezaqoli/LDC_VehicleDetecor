@@ -363,6 +363,19 @@ void taskSpeedMatch(void *)
         reportEvent(*st.e1, wsSend);
         reportEvent(*st.e2, wsSend);
 
+        char betweenMsg[256] = {};
+        if (trafficMonitorBuildBetweenLinesEvent(i, st.e1, st.e2,
+                                                 st.last_speed_kmh,
+                                                 betweenMsg,
+                                                 sizeof(betweenMsg)))
+        {
+          wsSend(betweenMsg);
+          #ifdef ENABLE_MQTT
+            mqttPublishEvent(betweenMsg);
+          #endif
+          Serial.println(betweenMsg);
+        }
+
         char msg[192];
         snprintf(msg, sizeof(msg),
                  "SPEED|idx:%u|speed:%.1f|len:%.2f|type:%s|delay:%.2f|dist:%.2f|a:%s|b:%s",
