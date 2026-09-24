@@ -16,13 +16,17 @@ const u8_t LedSensors[8] = {LEDs1, LEDs2, LEDs3, LEDs4, LEDs5, LEDs6, LEDs7, LED
 // ============================================================
 // Internal helpers (file-scoped)
 // ============================================================
+static portMUX_TYPE eventPoolMux = portMUX_INITIALIZER_UNLOCKED;
+
 static EventResult *allocEventSlot()
 {
   EventResult *slot = nullptr;
   if (freeEventQueue && xQueueReceive(freeEventQueue, &slot, 0) == pdTRUE)
   {
+    portENTER_CRITICAL(&eventPoolMux);
     if (slot >= eventPool && slot < eventPool + EVENT_POOL_SIZE)
       eventPoolRefs[slot - eventPool] = 1;
+    portEXIT_CRITICAL(&eventPoolMux);
     return slot;
   }
   return nullptr;
@@ -31,24 +35,33 @@ static EventResult *allocEventSlot()
 static void retainEventSlot(EventResult *slot)
 {
   if (slot && slot >= eventPool && slot < eventPool + EVENT_POOL_SIZE)
+  {
+    portENTER_CRITICAL(&eventPoolMux);
     eventPoolRefs[slot - eventPool]++;
+    portEXIT_CRITICAL(&eventPoolMux);
+  }
 }
 
 void releaseEventSlot(EventResult *slot)
 {
   if (slot && freeEventQueue)
   {
+    bool release = true;
     if (slot >= eventPool && slot < eventPool + EVENT_POOL_SIZE)
     {
+      portENTER_CRITICAL(&eventPoolMux);
       uint8_t &refs = eventPoolRefs[slot - eventPool];
       if (refs > 1)
       {
         refs--;
-        return;
+        release = false;
       }
-      refs = 0;
+      else
+        refs = 0;
+      portEXIT_CRITICAL(&eventPoolMux);
     }
-    xQueueSend(freeEventQueue, &slot, 0);
+    if (release)
+      xQueueSend(freeEventQueue, &slot, 0);
   }
 }
 
@@ -144,7 +157,15 @@ void taskDetector(void *)
               {
                 *slot = ev;
                 if (xQueueSend(eventQueue, &slot, 0) != pdTRUE)
+                {
+                  Serial.printf("[%s] Event queue full - dropping event\n", ev.channel_id);
                   releaseEventSlot(slot);
+                }
+              }
+              else
+              {
+                Serial.printf("[%s] Event pool exhausted - dropping dual-loop event\n",
+                              det[s][ch].id());
               }
             }
             else
@@ -262,11 +283,32 @@ void taskSpeedMatch(void *)
         releaseEventSlot(ev);
     }
 
+    const uint64_t now_us = (uint64_t)esp_timer_get_time();
     for (uint8_t i = 0; i < SPEED_PAIR_COUNT; i++)
     {
       LoopConfig &cfgPair = loopCfg[i];
       SpeedPairState &st = speedState[i];
-      if (!cfgPair.dualLoop || !st.h1 || !st.h2 || !st.e1 || !st.e2)
+      if (!cfgPair.dualLoop)
+        continue;
+
+      // A lone event must not hold an event-pool slot indefinitely while
+      // waiting for a partner that will never arrive.
+      if (st.h1 && !st.h2 && st.e1 &&
+          now_us - (uint64_t)st.e1->end_us > SPEED_PAIR_TIMEOUT_US)
+      {
+        releaseEventSlot(st.e1);
+        st.e1 = nullptr;
+        st.h1 = false;
+      }
+      if (st.h2 && !st.h1 && st.e2 &&
+          now_us - (uint64_t)st.e2->end_us > SPEED_PAIR_TIMEOUT_US)
+      {
+        releaseEventSlot(st.e2);
+        st.e2 = nullptr;
+        st.h2 = false;
+      }
+
+      if (!st.h1 || !st.h2 || !st.e1 || !st.e2)
         continue;
 
       char id1[8], id2[8];
@@ -284,7 +326,7 @@ void taskSpeedMatch(void *)
       }
 
       uint32_t event_delta_us = (st.e1->end_us > st.e2->end_us) ? (st.e1->end_us - st.e2->end_us) : (st.e2->end_us - st.e1->end_us);
-      if (event_delta_us > 3000000UL)
+      if (event_delta_us > SPEED_PAIR_TIMEOUT_US)
       {
         releaseEventSlot(st.e1);
         releaseEventSlot(st.e2);

@@ -300,6 +300,19 @@ void setup()
 //xTaskCreatePinnedToCore(taskGnssIdleWatcher,  "GNSS",    3072, NULL, 1, NULL, 1) != pdPASS ||
 //xTaskCreatePinnedToCore(taskLTECommandConsole, "LTE-Console", 4096, NULL, 5, NULL, 1) != pdPASS ||
 //xTaskCreatePinnedToCore(taskSmsService,      "SMS",     4096, NULL, 1, NULL, 1) != pdPASS ||
+
+
+
+      //   if (
+      // xTaskCreatePinnedToCore(taskSensorReading,        "Sensor", 8192, NULL, 2, NULL, 0) != pdPASS ||
+      // xTaskCreatePinnedToCore(taskDetector,          "Detector", 12288, NULL, 1, NULL, 0) != pdPASS ||
+      // xTaskCreatePinnedToCore(taskWsLoop,                   "WS", 12288, NULL, 3, NULL, 1) != pdPASS ||
+      // xTaskCreatePinnedToCore(taskSpeedMatch,           "Speed", 12288, NULL, 1, NULL, 0) != pdPASS ||
+      // xTaskCreatePinnedToCore(taskStatsReporter,        "Stats", 4096, NULL, 2, NULL, 0) != pdPASS ||
+      // xTaskCreatePinnedToCore(taskPowerMonitor,      "Power",   4096, NULL, 5, NULL, 0) != pdPASS ||
+      // xTaskCreatePinnedToCore(taskTimeSync,          "Time",    4096, NULL, 4, NULL, 0) != pdPASS ||     
+      // xTaskCreatePinnedToCore(taskWebServer,                "HTTP", 8192, NULL, 4, NULL, 1) != pdPASS
+      // )
   if (
       xTaskCreatePinnedToCore(taskMqttPublisher,    "MQTT-Pub",  8192, NULL, 5, NULL, 1) != pdPASS ||
       xTaskCreatePinnedToCore(taskSensorReading,        "Sensor", 8192, NULL, 2, NULL, 0) != pdPASS ||

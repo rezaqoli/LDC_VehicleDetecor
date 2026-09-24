@@ -548,9 +548,13 @@ bool VehicleDetector::feed(uint32_t raw, uint32_t ts_us, EventResult &result)
 
         if (elapsed_ms > cfg_.max_event_ms)
         {
-            Serial.printf("[%s] Event timeout\n", id_);
+            Serial.printf("[%s] Event timeout - emitting truncated event\n", id_);
             calibrator_.onEventEnd(ts_us / 1000);
-            reset_state(DetectorState::IDLE);
+            state_ = DetectorState::IDLE;
+            activity_suspected_ = false;
+            extract_features(ts_us, result);
+            classify(result);
+            return true;
         }
         return false;
     }
@@ -595,61 +599,61 @@ void VehicleDetector::extract_features(uint32_t end_us, EventResult &ev)
     ev.rise_ms = (ev_peak_us_ - ev_start_us_) / 1000.0f;
     ev.decay_ms = (end_us - ev_peak_us_) / 1000.0f;
 
-    float sum = 0, sum_sq = 0;
-    for (int i = 0; i < n; i++)
-    {
-        sum += signal_[i];
-        sum_sq += signal_[i] * signal_[i];
-    }
-    ev.mean_dev = sum / n;
-    ev.energy = sum_sq * 5.0f / 1000.0f;
-    ev.area = sum * 5.0f / 1000.0f;
+    // float sum = 0, sum_sq = 0;
+    // for (int i = 0; i < n; i++)
+    // {
+    //     sum += signal_[i];
+    //     sum_sq += signal_[i] * signal_[i];
+    // }
+    // ev.mean_dev = sum / n;
+    // ev.energy = sum_sq * 5.0f / 1000.0f;
+    // ev.area = sum * 5.0f / 1000.0f;
 
-    float var = 0;
-    for (int i = 0; i < n; i++)
-    {
-        float v = signal_[i] - ev.mean_dev;
-        var += v * v;
-    }
-    ev.std_dev = sqrtf(var / n);
-    if (ev.std_dev < 1e-6f)
-        ev.std_dev = 1e-6f;
+    // float var = 0;
+    // for (int i = 0; i < n; i++)
+    // {
+    //     float v = signal_[i] - ev.mean_dev;
+    //     var += v * v;
+    // }
+    // ev.std_dev = sqrtf(var / n);
+    // if (ev.std_dev < 1e-6f)
+    //     ev.std_dev = 1e-6f;
 
-    float rms = sqrtf(sum_sq / n);
-    ev.crest_factor = (rms > 1e-9f) ? (ev.peak_dev / rms) : 0.0f;
+    // float rms = sqrtf(sum_sq / n);
+    // ev.crest_factor = (rms > 1e-9f) ? (ev.peak_dev / rms) : 0.0f;
 
-    // --- Skewness, Kurtosis, CoM ---
-    float sk = 0;
-    float mass_sum = 0.0f;
-    float weight_sum = 0.0f;
-    for (int i = 0; i < n; i++)
-    {
-        float v = signal_[i] - ev.mean_dev;
-        float z = v / ev.std_dev;
-        sk += z * z * z;
+    // // --- Skewness, Kurtosis, CoM ---
+    // float sk = 0;
+    // float mass_sum = 0.0f;
+    // float weight_sum = 0.0f;
+    // for (int i = 0; i < n; i++)
+    // {
+    //     float v = signal_[i] - ev.mean_dev;
+    //     float z = v / ev.std_dev;
+    //     sk += z * z * z;
 
-        float w = signal_[i] > 0.0f ? signal_[i] : 0.0f;
-        weight_sum += w;
-        mass_sum += (float)i * w;
-    }
-    ev.skewness = sk / n;
-    ev.kurtosis = 0.0f;
-    ev.com_idx = (weight_sum > 0.0f) ? (mass_sum / weight_sum) : 0.0f;
+    //     float w = signal_[i] > 0.0f ? signal_[i] : 0.0f;
+    //     weight_sum += w;
+    //     mass_sum += (float)i * w;
+    // }
+    // ev.skewness = sk / n;
+    // ev.kurtosis = 0.0f;
+    // ev.com_idx = (weight_sum > 0.0f) ? (mass_sum / weight_sum) : 0.0f;
 
-    // --- Zero crossings (relative to mean) ---
-    ev.zero_crossings = 0;
-    for (int i = 1; i < n; i++)
-    {
-        if ((signal_[i - 1] - ev.mean_dev) * (signal_[i] - ev.mean_dev) < 0)
-            ev.zero_crossings++;
-    }
+    // // --- Zero crossings (relative to mean) ---
+    // ev.zero_crossings = 0;
+    // for (int i = 1; i < n; i++)
+    // {
+    //     if ((signal_[i - 1] - ev.mean_dev) * (signal_[i] - ev.mean_dev) < 0)
+    //         ev.zero_crossings++;
+    // }
 
-    // --- Front energy ratio ---
-    float front_sum_sq = 0;
-    int half_n = n / 2;
-    for (int i = 0; i < half_n; i++)
-        front_sum_sq += signal_[i] * signal_[i];
-    ev.front_energy_ratio = (sum_sq > 1e-9f) ? (front_sum_sq / sum_sq) : 0.5f;
+    // // --- Front energy ratio ---
+    // float front_sum_sq = 0;
+    // int half_n = n / 2;
+    // for (int i = 0; i < half_n; i++)
+    //     front_sum_sq += signal_[i] * signal_[i];
+    // ev.front_energy_ratio = (sum_sq > 1e-9f) ? (front_sum_sq / sum_sq) : 0.5f;
 
     // --- Peak detection & axle distance ---
     const float peak_threshold = ev.peak_dev * cfg_.peak_prominence_ratio;
@@ -712,72 +716,72 @@ void VehicleDetector::extract_features(uint32_t end_us, EventResult &ev)
     }
 
     // --- Spectral Flatness & Dominant Freq (using DFT bin 1..10) ---
-    ev.dft_re = 0.0f;
-    ev.dft_im = 0.0f;
-    ev.dominant_freq_hz = 0.0f;
-    ev.spectral_flatness = 0.0f;
+    // ev.dft_re = 0.0f;
+    // ev.dft_im = 0.0f;
+    // ev.dominant_freq_hz = 0.0f;
+    // ev.spectral_flatness = 0.0f;
 
-    if (n > 20)
-    {
-        float max_mag = 0.0f;
-        int max_bin = 1;
-        for (int k = 1; k <= 2 && k < n / 2; k++)
-        {
-            float re = 0, im = 0;
-            float angle_step = -2.0f * PI * k / n;
-            for (int i = 0; i < n; i++)
-            {
-                float angle = angle_step * i;
-                re += signal_[i] * cosf(angle);
-                im += signal_[i] * sinf(angle);
-            }
-            float mag = sqrtf(re * re + im * im);
-            if (mag > max_mag)
-            {
-                max_mag = mag;
-                max_bin = k;
-                ev.dft_re = re;
-                ev.dft_im = im;
-            }
-        }
-        float fs = 200.0f;
-        ev.dominant_freq_hz = max_bin * fs / n;
+    // if (n > 20)
+    // {
+    //     float max_mag = 0.0f;
+    //     int max_bin = 1;
+    //     for (int k = 1; k <= 2 && k < n / 2; k++)
+    //     {
+    //         float re = 0, im = 0;
+    //         float angle_step = -2.0f * PI * k / n;
+    //         for (int i = 0; i < n; i++)
+    //         {
+    //             float angle = angle_step * i;
+    //             re += signal_[i] * cosf(angle);
+    //             im += signal_[i] * sinf(angle);
+    //         }
+    //         float mag = sqrtf(re * re + im * im);
+    //         if (mag > max_mag)
+    //         {
+    //             max_mag = mag;
+    //             max_bin = k;
+    //             ev.dft_re = re;
+    //             ev.dft_im = im;
+    //         }
+    //     }
+        // float fs = 200.0f;
+        // ev.dominant_freq_hz = max_bin * fs / n;
 
-        float log_sum = 0;
-        for (int i = 0; i < n; i++)
-        {
-            float a = fabsf(signal_[i]) + 1e-10f;
-            log_sum += logf(a);
-        }
-        float geo_mean = expf(log_sum / n);
-        float arith_mean = sum / n + 1e-10f;
-        ev.spectral_flatness = geo_mean / arith_mean;
-    }
+        // float log_sum = 0;
+        // for (int i = 0; i < n; i++)
+        // {
+        //     float a = fabsf(signal_[i]) + 1e-10f;
+        //     log_sum += logf(a);
+        // }
+        // float geo_mean = expf(log_sum / n);
+        // float arith_mean = sum / n + 1e-10f;
+        // ev.spectral_flatness = geo_mean / arith_mean;
+    //}
 
-    // --- Width at half max ---
-    float half_peak = ev.peak_dev * 0.5f;
-    int width_samples = 0;
-    for (int i = 0; i < n; i++)
-    {
-        if (signal_[i] >= half_peak)
-            width_samples++;
-    }
-    ev.width_half_max = width_samples;
+    // // --- Width at half max ---
+    // float half_peak = ev.peak_dev * 0.5f;
+    // int width_samples = 0;
+    // for (int i = 0; i < n; i++)
+    // {
+    //     if (signal_[i] >= half_peak)
+    //         width_samples++;
+    // }
+    // ev.width_half_max = width_samples;
 
-    // --- Max slope ---
-    float max_slope = 0;
-    for (int i = 1; i < n; i++)
-    {
-        float sl = fabsf(signal_[i] - signal_[i - 1]) / 5.0f;
-        if (sl > max_slope)
-            max_slope = sl;
-    }
-    ev.max_slope = max_slope;
+    // // --- Max slope ---
+    // float max_slope = 0;
+    // for (int i = 1; i < n; i++)
+    // {
+    //     float sl = fabsf(signal_[i] - signal_[i - 1]) / 5.0f;
+    //     if (sl > max_slope)
+    //         max_slope = sl;
+    // }
+    // ev.max_slope = max_slope;
 
-    // --- Anomaly score ---
-    ev.anomaly_score = (int)((ev.peak_dev / fmaxf(effective_enter_thresh_, 1e-6f)) * 20.0f);
-    if (ev.anomaly_score > 100)
-        ev.anomaly_score = 100;
+    // // --- Anomaly score ---
+    // ev.anomaly_score = (int)((ev.peak_dev / fmaxf(effective_enter_thresh_, 1e-6f)) * 20.0f);
+    // if (ev.anomaly_score > 100)
+    //     ev.anomaly_score = 100;
 
     // --- Length estimation (single loop fallback) ---
     if (n > 1 && !dual_loop_mode_)
@@ -807,193 +811,193 @@ void VehicleDetector::classify(EventResult &ev)
     int truck_s = 0, truck_2 = 0, truck_3 = 0, truck_4 = 0;
 
 
-    // 3. AXLE SPACING (normalized to meters)
-    if (ev.peak_distance_ms > 0)
-    {
-        float axle_spacing_meters = 0.0f;
+    // // 3. AXLE SPACING (normalized to meters)
+    // if (ev.peak_distance_ms > 0)
+    // {
+    //     float axle_spacing_meters = 0.0f;
 
-        if (ev.spatial_speed_ms > 1.0f)
-        {
-            axle_spacing_meters = ev.peak_distance_ms * 0.001f * ev.spatial_speed_ms;
-        }
-        else
-        {
-            float assumed_speed_ms = cfg_.default_speed_kmh / 3.6f;
-            axle_spacing_meters = ev.peak_distance_ms * 0.001f * assumed_speed_ms;
-        }
+    //     if (ev.spatial_speed_ms > 1.0f)
+    //     {
+    //         axle_spacing_meters = ev.peak_distance_ms * 0.001f * ev.spatial_speed_ms;
+    //     }
+    //     else
+    //     {
+    //         float assumed_speed_ms = cfg_.default_speed_kmh / 3.6f;
+    //         axle_spacing_meters = ev.peak_distance_ms * 0.001f * assumed_speed_ms;
+    //     }
 
-        if (axle_spacing_meters < 2.5f)
-        {
-            car += 3;
-            pickup += 2;
-        }
-        else if (axle_spacing_meters < 3.5f)
-        {
-            pickup += 3;
-            van += 2;
-            truck_s += 2;
-        }
-        else if (axle_spacing_meters < 5.0f)
-        {
-            truck_2 += 4;
-            truck_s += 2;
-            bus += 2;
-        }
-        else
-        {
-            truck_3 += 4;
-            truck_4 += 5;
-            bus += 3;
-        }
-    }
+    //     if (axle_spacing_meters < 2.5f)
+    //     {
+    //         car += 3;
+    //         pickup += 2;
+    //     }
+    //     else if (axle_spacing_meters < 3.5f)
+    //     {
+    //         pickup += 3;
+    //         van += 2;
+    //         truck_s += 2;
+    //     }
+    //     else if (axle_spacing_meters < 5.0f)
+    //     {
+    //         truck_2 += 4;
+    //         truck_s += 2;
+    //         bus += 2;
+    //     }
+    //     else
+    //     {
+    //         truck_3 += 4;
+    //         truck_4 += 5;
+    //         bus += 3;
+    //     }
+    // }
 
-    // 4. CREST FACTOR
-    if (crest > cfg_.classify_crest_spiky)
-    {
-        motor += 3;
-        car += 3;
-    }
-    else if (crest > cfg_.classify_crest_broad)
-    {
-        car += 2;
-        pickup += 2;
-        van += 1;
-    }
-    else
-    {
-        bus += 3;
-        truck_2 += 2;
-        truck_3 += 2;
-        truck_4 += 2;
-        van += 1;
-    }
+    // // 4. CREST FACTOR
+    // if (crest > cfg_.classify_crest_spiky)
+    // {
+    //     motor += 3;
+    //     car += 3;
+    // }
+    // else if (crest > cfg_.classify_crest_broad)
+    // {
+    //     car += 2;
+    //     pickup += 2;
+    //     van += 1;
+    // }
+    // else
+    // {
+    //     bus += 3;
+    //     truck_2 += 2;
+    //     truck_3 += 2;
+    //     truck_4 += 2;
+    //     van += 1;
+    // }
 
-    // 5. SKEWNESS & CoM (symmetry)
-    if (abs_skew < cfg_.classify_skew_tol && com_norm > cfg_.classify_com_center_min && com_norm < cfg_.classify_com_center_max)
-    {
-        car += 2;
-        van += 2;
-        bus += 1;
-    }
-    else if (abs_skew > cfg_.classify_skew_high || com_norm < cfg_.classify_com_edge_min || com_norm > cfg_.classify_com_edge_max)
-    {
-        pickup += 2;
-        truck_2 += 1;
-        truck_3 += 1;
-        truck_4 += 1;
-    }
+    // // 5. SKEWNESS & CoM (symmetry)
+    // if (abs_skew < cfg_.classify_skew_tol && com_norm > cfg_.classify_com_center_min && com_norm < cfg_.classify_com_center_max)
+    // {
+    //     car += 2;
+    //     van += 2;
+    //     bus += 1;
+    // }
+    // else if (abs_skew > cfg_.classify_skew_high || com_norm < cfg_.classify_com_edge_min || com_norm > cfg_.classify_com_edge_max)
+    // {
+    //     pickup += 2;
+    //     truck_2 += 1;
+    //     truck_3 += 1;
+    //     truck_4 += 1;
+    // }
 
-    // 6. RISE TIME
-    if (ev.rise_ms < cfg_.classify_rise_short_ms)
-    {
-        motor += 3;
-        car += 2;
-    }
-    else if (ev.rise_ms < cfg_.classify_rise_mid_ms)
-    {
-        car += 2;
-        pickup += 2;
-        van += 1;
-    }
-    else if (ev.rise_ms < cfg_.classify_rise_long_ms)
-    {
-        van += 1;
-        bus += 2;
-        truck_2 += 2;
-    }
-    else
-    {
-        bus += 3;
-        truck_3 += 2;
-        truck_4 += 2;
-    }
+    // // 6. RISE TIME
+    // if (ev.rise_ms < cfg_.classify_rise_short_ms)
+    // {
+    //     motor += 3;
+    //     car += 2;
+    // }
+    // else if (ev.rise_ms < cfg_.classify_rise_mid_ms)
+    // {
+    //     car += 2;
+    //     pickup += 2;
+    //     van += 1;
+    // }
+    // else if (ev.rise_ms < cfg_.classify_rise_long_ms)
+    // {
+    //     van += 1;
+    //     bus += 2;
+    //     truck_2 += 2;
+    // }
+    // else
+    // {
+    //     bus += 3;
+    //     truck_3 += 2;
+    //     truck_4 += 2;
+    // }
 
-    // 7. ENERGY LEVEL
-    if (ev.energy < cfg_.classify_energy_low)
-    {
-        motor += 2;
-        car += 1;
-    }
-    else if (ev.energy < cfg_.classify_energy_mid)
-    {
-        car += 2;
-        pickup += 1;
-        van += 1;
-    }
-    else if (ev.energy < cfg_.classify_energy_high)
-    {
-        pickup += 2;
-        van += 2;
-        truck_s += 1;
-    }
-    else
-    {
-        bus += 2;
-        truck_2 += 2;
-        truck_3 += 3;
-        truck_4 += 3;
-    }
+    // // 7. ENERGY LEVEL
+    // if (ev.energy < cfg_.classify_energy_low)
+    // {
+    //     motor += 2;
+    //     car += 1;
+    // }
+    // else if (ev.energy < cfg_.classify_energy_mid)
+    // {
+    //     car += 2;
+    //     pickup += 1;
+    //     van += 1;
+    // }
+    // else if (ev.energy < cfg_.classify_energy_high)
+    // {
+    //     pickup += 2;
+    //     van += 2;
+    //     truck_s += 1;
+    // }
+    // else
+    // {
+    //     bus += 2;
+    //     truck_2 += 2;
+    //     truck_3 += 3;
+    //     truck_4 += 3;
+    // }
 
-    // 8. WIDTH RATIO
-    if (width_ratio < cfg_.classify_width_medium)
-    {
-        motor += 2;
-        car += 2;
-    }
-    else if (width_ratio < cfg_.classify_width_wide)
-    {
-        car += 2;
-        pickup += 2;
-        van += 2;
-        truck_s += 1;
-    }
-    else
-    {
-        bus += 3;
-        truck_2 += 2;
-        truck_3 += 2;
-        truck_4 += 2;
-    }
+    // // 8. WIDTH RATIO
+    // if (width_ratio < cfg_.classify_width_medium)
+    // {
+    //     motor += 2;
+    //     car += 2;
+    // }
+    // else if (width_ratio < cfg_.classify_width_wide)
+    // {
+    //     car += 2;
+    //     pickup += 2;
+    //     van += 2;
+    //     truck_s += 1;
+    // }
+    // else
+    // {
+    //     bus += 3;
+    //     truck_2 += 2;
+    //     truck_3 += 2;
+    //     truck_4 += 2;
+    // }
 
-    // 9. ZERO CROSSINGS
-    if (ev.zero_crossings <= 1)
-    {
-        car += 2;
-        motor += 1;
-    }
-    else if (ev.zero_crossings <= 3)
-    {
-        pickup += 2;
-        van += 2;
-        truck_s += 1;
-    }
-    else if (ev.zero_crossings <= 6)
-    {
-        truck_2 += 3;
-        truck_s += 1;
-        van += 1;
-    }
-    else
-    {
-        truck_3 += 3;
-        truck_4 += 4;
-        bus += 2;
-    }
+    // // 9. ZERO CROSSINGS
+    // if (ev.zero_crossings <= 1)
+    // {
+    //     car += 2;
+    //     motor += 1;
+    // }
+    // else if (ev.zero_crossings <= 3)
+    // {
+    //     pickup += 2;
+    //     van += 2;
+    //     truck_s += 1;
+    // }
+    // else if (ev.zero_crossings <= 6)
+    // {
+    //     truck_2 += 3;
+    //     truck_s += 1;
+    //     van += 1;
+    // }
+    // else
+    // {
+    //     truck_3 += 3;
+    //     truck_4 += 4;
+    //     bus += 2;
+    // }
 
-    // 10. FRONT ENERGY RATIO
-    if (ev.front_energy_ratio < 0.4f || ev.front_energy_ratio > 0.6f)
-    {
-        truck_2 += 1;
-        truck_3 += 1;
-        truck_4 += 1;
-        pickup += 1;
-    }
-    else
-    {
-        car += 1;
-        van += 1;
-        bus += 1;
-    }
+    // // 10. FRONT ENERGY RATIO
+    // if (ev.front_energy_ratio < 0.4f || ev.front_energy_ratio > 0.6f)
+    // {
+    //     truck_2 += 1;
+    //     truck_3 += 1;
+    //     truck_4 += 1;
+    //     pickup += 1;
+    // }
+    // else
+    // {
+    //     car += 1;
+    //     van += 1;
+    //     bus += 1;
+    // }
 
 
     // 2. NUM PEAKS (axle count proxy)
@@ -1164,7 +1168,7 @@ void send_full_features(const EventResult &ev, void (*wsCallback)(const char *))
 {
     char msg[1024];
     int written = snprintf(msg, sizeof(msg),
-                           "EVENT|%s|start_us:%lu|peak_us:%lu|end_us:%lu|dur:%.1f|peak:%.6f|mean:%.6f|std:%.6f|energy:%.6f|area:%.6f|rise:%.1f|decay:%.1f|skew:%.6f|kurt:%.6f|max_slope:%.6f|w50:%d|score:%d|class:%s|baseline:%.1f|spatial_speed:%.3f|samples:%lu|est_len:%.1f|num_peaks:%d|com_idx:%.2f|dft_re:%.6f|dft_im:%.6f|crest:%.6f|pk_dist:%.1f|zcr:%d|front_en:%.2f|flat:%.3f|dom_hz:%.1f",
+                           "EVENT|%s|start_us:%lu|peak_us:%lu|end_us:%lu|dur:%.1f|peak:%.3f|mean:%.3f|std:%.3f|energy:%.3f|area:%.3f|rise:%.1f|decay:%.1f|skew:%.3f|kurt:%.3f|max_slope:%.3f|w50:%d|score:%d|class:%s|baseline:%.1f|spatial_speed:%.3f|samples:%lu|est_len:%.1f|num_peaks:%d|com_idx:%.2f|dft_re:%.3f|dft_im:%.3f|crest:%.3f|pk_dist:%.1f|zcr:%d|front_en:%.3f|flat:%.3f|dom_hz:%.1f",
                            ev.channel_id,
                            (unsigned long)ev.start_us,
                            (unsigned long)ev.peak_us,
@@ -1221,13 +1225,13 @@ void reportEvent(const EventResult &ev, void (*wsCallback)(const char *))
 
     char msg[256];
     snprintf(msg, sizeof(msg),
-             "EVENT|%s|dur:%.1f|peak:%.6f|w50:%d|rise:%.1f|class:%s|score:%d|crest:%.6f|len:%.1f|peaks:%d|pkdist:%.1f",
+             "EVENT|%s|dur:%.1f|peak:%.3f|w50:%d|rise:%.1f|class:%s|score:%d|crest:%.6f|len:%.1f|peaks:%d|pkdist:%.1f",
              ev.channel_id, ev.duration_ms, ev.peak_dev, ev.width_half_max,
              ev.rise_ms, ev.vehicle_class, ev.anomaly_score, ev.crest_factor,
              ev.estimated_length_m, ev.num_peaks, ev.peak_distance_ms);
     if (wsCallback)
         wsCallback(msg);
-    Serial.printf("[%s] %.1fms peak=%.6f w50=%d class=%s len=%.1fm peaks=%d\n",
+    Serial.printf("[%s] %.1fms peak=%.3f w50=%d class=%s len=%.1fm peaks=%d\n",
                   ev.channel_id, ev.duration_ms, ev.peak_dev, ev.width_half_max,
                   ev.vehicle_class, ev.estimated_length_m, ev.num_peaks);
 

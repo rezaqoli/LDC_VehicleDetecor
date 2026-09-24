@@ -121,7 +121,10 @@ static const int SAMPLING_MS = 5; // 200 Hz sampling rate
 // ============================================================
 // Pool & Queue Sizes
 // ============================================================
-static const uint8_t EVENT_POOL_SIZE = 8;
+// Speed matching can retain two events per configured pair. Keep headroom for
+// queued events so a slow partner does not silently starve the detector.
+static const uint8_t EVENT_POOL_SIZE = 16;
+static const uint64_t SPEED_PAIR_TIMEOUT_US = 1000000ULL;
 static const uint8_t WS_TX_POOL_SIZE = 16;
 static const size_t  WS_TX_MSG_MAX   = 800;
 
